@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>IOS-XE Compliance Report{% if device_name %} - {{ device_name }}{% endif %}</title>
+<style>
+  :root {
+    --pass: #1e7e34; --pass-bg: #e6f4ea;
+    --fail: #b02a37; --fail-bg: #fbe7e9;
+    --exception: #8a6d00; --exception-bg: #fff6da;
+    --manual: #495057; --manual-bg: #eceff1;
+    --border: #d0d7de;
+    --text: #1b1f23;
+    --muted: #57606a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    margin: 2rem;
+    color: var(--text);
+    background: #ffffff;
+  }
+  h1 { margin-bottom: 0.2rem; }
+  .subtitle { color: var(--muted); margin-top: 0; }
+  .dashboard { display: flex; gap: 1rem; flex-wrap: wrap; margin: 1.5rem 0 2rem 0; }
+  .stat {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.9rem 1.4rem;
+    min-width: 110px;
+  }
+  .stat .value { font-size: 1.8rem; font-weight: 700; line-height: 1.1; }
+  .stat .label {
+    font-size: 0.78rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  .stat.pass .value { color: var(--pass); }
+  .stat.fail .value { color: var(--fail); }
+  .stat.exception .value { color: var(--exception); }
+  .stat.manual_review .value { color: var(--manual); }
+  .severity-group { margin-top: 2.2rem; }
+  .severity-group h2 {
+    border-bottom: 2px solid var(--border);
+    padding-bottom: 0.3rem;
+    font-size: 1.2rem;
+  }
+  table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; }
+  tr.control-row { border-bottom: 1px solid var(--border); }
+  td, th { text-align: left; padding: 0.6rem 0.5rem; vertical-align: top; }
+  th { font-size: 0.8rem; text-transform: uppercase; color: var(--muted); }
+  .status-badge {
+    display: inline-block;
+    padding: 0.15rem 0.65rem;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .status-pass { background: var(--pass-bg); color: var(--pass); }
+  .status-fail { background: var(--fail-bg); color: var(--fail); }
+  .status-exception { background: var(--exception-bg); color: var(--exception); }
+  .status-manual_review { background: var(--manual-bg); color: var(--manual); }
+  details summary { cursor: pointer; }
+  details summary::marker { color: var(--muted); }
+  .control-id { color: var(--muted); font-size: 0.85rem; font-weight: 400; }
+  .detail-body { padding: 0.6rem 0 1rem 1.1rem; font-size: 0.92rem; color: #2d3339; }
+  .detail-body dt { font-weight: 600; margin-top: 0.5rem; }
+  .detail-body dd { margin: 0 0 0.3rem 0; }
+  .detail-body ul { margin: 0.2rem 0; padding-left: 1.2rem; }
+</style>
+</head>
+<body>
+  <h1>Cisco IOS-XE Configuration Compliance Report</h1>
+  <p class="subtitle">
+    {% if device_name %}Device: {{ device_name }} &middot; {% endif %}{{ summary.total }} controls evaluated
+  </p>
+
+  <div class="dashboard">
+    <div class="stat">
+      <div class="value">{{ summary.total }}</div>
+      <div class="label">Total Controls</div>
+    </div>
+    <div class="stat pass">
+      <div class="value">{{ summary.counts.PASS }}</div>
+      <div class="label">Pass</div>
+    </div>
+    <div class="stat fail">
+      <div class="value">{{ summary.counts.FAIL }}</div>
+      <div class="label">Fail</div>
+    </div>
+    <div class="stat exception">
+      <div class="value">{{ summary.counts.EXCEPTION }}</div>
+      <div class="label">Exception</div>
+    </div>
+    <div class="stat manual_review">
+      <div class="value">{{ summary.counts.MANUAL_REVIEW }}</div>
+      <div class="label">Manual Review</div>
+    </div>
+    <div class="stat">
+      <div class="value">{{ summary.compliance_pct }}%</div>
+      <div class="label">Compliance</div>
+    </div>
+  </div>
+
+  {% for severity, items in grouped_results %}
+  <section class="severity-group">
+    <h2>{{ severity }} Severity ({{ items|length }})</h2>
+    <table>
+      <thead>
+        <tr><th style="width:9rem">Status</th><th>Control</th></tr>
+      </thead>
+      <tbody>
+      {% for r in items %}
+        <tr class="control-row">
+          <td><span class="status-badge status-{{ r.status|lower }}">{{ status_labels[r.status] }}</span></td>
+          <td>
+            <details>
+              <summary><strong>{{ r.title }}</strong> <span class="control-id">({{ r.control_id }})</span></summary>
+              <div class="detail-body">
+                <dl>
+                  {% if r.explanation %}
+                  <dt>Explanation</dt><dd>{{ r.explanation }}</dd>
+                  {% endif %}
+                  <dt>Evidence found</dt><dd>{{ r.evidence_found }}</dd>
+                  <dt>Remediation</dt><dd>{{ r.remediation }}</dd>
+                  <dt>Risk</dt><dd>{{ r.risk }}</dd>
+                  {% if r.details %}
+                  <dt>Details</dt>
+                  <dd><ul>{% for d in r.details %}<li>{{ d }}</li>{% endfor %}</ul></dd>
+                  {% endif %}
+                </dl>
+              </div>
+            </details>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  {% endfor %}
+</body>
+</html>

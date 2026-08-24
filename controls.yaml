@@ -1,0 +1,637 @@
+# Structured control definitions for the Cisco IOS-XE Config Compliance Checker.
+#
+# Source: support_files/Prompt para VibeCoding.pdf (18 controls). control_00007 does not
+# exist in the source document (numbering jumps 00006 -> 00008) and is intentionally
+# omitted here rather than renumbered. Six controls carry an additional
+# not_compliance_condition beyond the literal source text, added to satisfy the
+# acceptance-criteria findings list (TACACS Type 7, permissive VTY ACL, SNMP v2c/v3
+# coexistence, inconsistent password hashing, NTP authentication, missing CoPP) --
+# see CLAUDE.md section 11 for the rationale behind each addition.
+
+- control_id: control_00001
+  title: "Hostname"
+  explanation: >
+    The hostname has specific characteristics that should be taken into consideration.
+    Name parts are separated by an underscore: 1) Company name, 2) Country,
+    3) Type (router, switch, wlc, access-point, pbx, firewall, etc.),
+    4) Function (mpls, internet, DSL, etc.), 5) Site, 6) Device number.
+  command_template: |
+    hostname <hostname>
+  variables:
+    - hostname
+    - company_name
+    - country
+    - type
+    - function
+    - site
+    - device_number
+  not_compliance_conditions:
+    - "Name does not meet the naming convention (COMPANY_COUNTRY_TYPE_FUNCTION_SITE_DEVICENUMBER)"
+    - "Hostname is generic (e.g. router, switch, wireless_controller, access_point)"
+  exceptions:
+    - "No specific exceptions identified for this control."
+  severity: Low
+  risk: >
+    An inconsistent or generic hostname hinders asset identification, audit logging,
+    and security incident response.
+  remediation: >
+    Configure the hostname following the corporate naming convention:
+    hostname <COMPANY>_<COUNTRY>_<TYPE>_<FUNCTION>_<SITE>_<DEVICE_NUMBER>.
+  evidence: "The 'hostname' line in the running configuration."
+  deterministic_validation: true
+  manual_review: false
+  config_example: |
+    hostname INTEL_CR_RT_INT_BLN_01
+
+- control_id: control_00002
+  title: "Domain"
+  explanation: >
+    This command defines the domain name for the device, which is a required
+    parameter for generating cryptographic keys.
+  command_template: |
+    ip domain name <company_name>
+  variables:
+    - company_name
+  not_compliance_conditions:
+    - "Domain name does not match the name assigned by the client."
+  exceptions:
+    - "In some cases it is not necessary to use a domain."
+  severity: Low
+  risk: >
+    Missing or incorrect domain names prevent the successful generation of RSA keys
+    required for secure protocols like SSH.
+  remediation: "Apply the correct domain using: ip domain name <company_name>."
+  evidence: "The 'ip domain name' command in the running configuration."
+  deterministic_validation: true
+  manual_review: false
+  config_example: |
+    ip domain name acme.com
+
+- control_id: control_00003
+  title: "AAA"
+  explanation: >
+    Configures the Authentication, Authorization, and Accounting framework to manage
+    user access and activity logging on the device.
+  command_template: |
+    aaa new-model
+    aaa authentication password-prompt LOCAL_PASS:
+    aaa authentication username-prompt LOCAL_USER:
+    aaa authentication login default group <tacacs_group> local
+    aaa authentication enable default group <tacacs_group> enable
+    aaa authorization config-commands
+    aaa authorization exec default group <tacacs_group> local if-authenticated
+    aaa authorization commands 1 default group <tacacs_group> if-authenticated
+    aaa authorization commands 15 default group <tacacs_group> if-authenticated
+    aaa accounting exec default start-stop group <tacacs_group>
+    aaa accounting commands 1 default start-stop group <tacacs_group>
+    aaa accounting commands 15 default start-stop group <tacacs_group>
+  variables:
+    - tacacs_group
+  not_compliance_conditions:
+    - "One of the required AAA commands is missing"
+    - "The TACACS group referenced does not match across all AAA commands"
+    - "'aaa new-model' is missing"
+  exceptions:
+    - "The device being audited specifically indicates that AAA is not needed."
+  severity: High
+  risk: >
+    Incomplete AAA configuration can lead to unauthorized access, lack of
+    accountability for administrative actions, and inability to log user sessions.
+  remediation: >
+    Implement the full AAA suite (Authentication, Authorization, and Accounting)
+    pointing to the authorized TACACS group.
+  evidence: "All 'aaa' commands in the running configuration."
+  deterministic_validation: true
+  manual_review: false
+  config_example: |
+    aaa authentication password-prompt LOCAL_PASS:
+    aaa authentication username-prompt LOCAL_USER:
+    aaa authentication login default group ACME_TACACS_SERVER_GROUP local
+    aaa authentication enable default group ACME_TACACS_SERVER_GROUP enable
+    aaa authorization config-commands
+    aaa authorization exec default group ACME_TACACS_SERVER_GROUP local if-authenticated
+    aaa authorization commands 1 default group ACME_TACACS_SERVER_GROUP if-authenticated
+    aaa authorization commands 15 default group ACME_TACACS_SERVER_GROUP if-authenticated
+    aaa accounting exec default start-stop group ACME_TACACS_SERVER_GROUP
+    aaa accounting commands 1 default start-stop group ACME_TACACS_SERVER_GROUP
+    aaa accounting commands 15 default start-stop group ACME_TACACS_SERVER_GROUP
+
+- control_id: control_00004
+  title: "TACACS"
+  explanation: >
+    Establishes communication with external TACACS+ servers to centralize security
+    and administrative access control.
+  command_template: |
+    aaa new-model
+    tacacs server <tacacs_server_name_1>
+     key 7 <key_value>
+     timeout <timeout_value>
+    tacacs server <tacacs_server_name_2>
+     key 7 <key_value>
+     timeout <timeout_value>
+    aaa group server tacacs+ <tacacs_group_name>
+     server name <tacacs_server_name_1>
+     server name <tacacs_server_name_2>
+     ip tacacs source-interface <source_interface>
+  variables:
+    - tacacs_server_name_1
+    - tacacs_server_name_2
+    - key_value
+    - timeout_value
+    - tacacs_group_name
+    - source_interface
+  not_compliance_conditions:
+    - "The commands are not present with the assigned variables (server names, group, source-interface)"
+    - "TACACS key is stored using reversible Type 7 encoding instead of Type 6 ('key config-key password-encrypt' + 'key 6 <key>')"
+  exceptions:
+    - "In some cases there is no TACACS server active in the environment. This condition should be indicated prior to device configuration."
+    - "Some old IOS versions do not support these commands."
+  severity: High
+  risk: >
+    Failure to communicate with central security servers forces the use of local
+    accounts, making user management difficult and less secure across the network.
+    A reversible Type 7 TACACS key can be trivially decoded if the configuration is
+    disclosed, exposing the shared secret.
+  remediation: >
+    Define the TACACS+ servers with the appropriate keys and timeouts as specified
+    by the security policy, using Type 6 key encryption instead of Type 7.
+  evidence: "'tacacs server' definitions and keys in the running configuration."
+  deterministic_validation: true
+  manual_review: false
+  config_example: |
+    aaa new-model
+    tacacs server ACME_TACACS_01
+     address ipv4 192.168.100.100
+     key 6 <encrypted_key>
+     timeout 10
+    tacacs server ACME_TACACS_02
+     address ipv4 192.138.100.102
+     key 6 <encrypted_key>
+     timeout 10
+    aaa group server tacacs+ ACME_TACACS_SERVER_GROUP
+     server name ACME_TACACS_01
+     server name ACME_TACACS_02
+     ip tacacs source-interface Loopback0
+
+- control_id: control_00005
+  title: "Local and emergency users"
+  explanation: >
+    Defines local user accounts and privileged mode passwords to ensure device
+    access in case of network failure or emergency.
+  command_template: |
+    username <user> privilege <privilege_level> algorithm-type scrypt secret <password>
+    enable secret <secret_psswd>
+  variables:
+    - user
+    - privilege_level
+    - password
+    - secret_psswd
+  not_compliance_conditions:
+    - "Username should be present"
+    - "Enable secret should be present"
+    - "The commands must be executed with the assigned variables"
+    - "Local user accounts use inconsistent password-hashing types (mixing type 5/0 with type 8/9), or use the weak type 5/0 hash"
+  exceptions:
+    - "No specific exceptions identified for this control."
+  severity: High
+  risk: >
+    Lack of local emergency accounts can result in total loss of access during a
+    network or TACACS outage. Weak or inconsistent password-hashing algorithms are
+    susceptible to brute-force attacks.
+  remediation: >
+    Configure a local admin user and 'enable secret' using high-security hashing
+    algorithms like scrypt (type 8/9), consistently across all local accounts.
+  evidence: "'username' and 'enable secret' lines in the running configuration."
+  deterministic_validation: true
+  manual_review: false
+  config_example: |
+    username admin privilege 15 algorithm-type scrypt secret 0123456789
+    enable secret 0123456789
+
+- control_id: control_00006
+  title: "SSH"
+  explanation: >
+    Prerequisites (hostname, domain) plus RSA key generation and SSH hardening
+    parameters for secure remote administrative access.
+  command_template: |
+    hostname <hostname>
+    ip domain name <domain_name>
+    crypto key zeroize rsa
+    crypto key generate rsa modulus 2048
+    ip ssh version <ssh_version>
+    ip ssh time-out <ssh_timeout>
+    ip ssh authentication-retries <ssh_auth_retries>
+  variables:
+    - ssh_version
+    - ssh_timeout
+    - ssh_auth_retries
+  not_compliance_conditions:
+    - "Hostname is not configured"
+    - "IP domain-name is not configured"
+    - "RSA key generation (modulus 2048) is missing"
+  exceptions:
+    - "No specific exceptions identified for this control."
+  severity: High
+  risk: >
+    Insecure or missing RSA keys prevent encrypted management traffic, leaving
+    administrative sessions vulnerable to eavesdropping.
+  remediation: >
+    Generate RSA keys with a minimum modulus of 2048 bits after setting the
+    hostname and domain.
+  evidence: "Output of 'show ip ssh' or absence of zeroize commands."
+  deterministic_validation: true
+  manual_review: false
+  config_example: |
+    crypto key zeroize rsa
+    crypto key generate rsa modulus 2048
+    ip ssh version 2
+    ip ssh time-out 60
+    ip ssh authentication-retries 3
+
+- control_id: control_00008
+  title: "Telnet Blocking"
+  explanation: >
+    Restricts remote access to the SSH protocol only, blocking Telnet to prevent
+    sending credentials in clear text.
+  command_template: |
+    line vty <vty_line_numbers>
+    transport input ssh
+    transport output ssh
+  variables:
+    - vty_line_numbers
+  not_compliance_conditions:
+    - "Telnet (port 23) is enabled for VTY lines"
+    - "'transport input ssh' command is missing on VTY lines"
+  exceptions:
+    - "No specific exceptions identified for this control."
+  severity: High
+  risk: >
+    Allowing Telnet allows administrative credentials and data to be transmitted in
+    plain text, which can be captured by attackers on the network.
+  remediation: "Strictly limit transport input to SSH on all VTY lines."
+  evidence: "'transport input ssh' under 'line vty' in the running configuration."
+  deterministic_validation: true
+  manual_review: false
+  config_example: |
+    line vty 0 15
+     access-class VTY_ACL_NAME in
+     exec-timeout 10 0
+     transport input ssh
+     transport output ssh
+     logging synchronous
+     session-timeout 10
+     exec prompt timestamp
+     history size 20
+
+- control_id: control_00009
+  title: "NTP"
+  explanation: >
+    Configures time synchronization with NTP servers to ensure system logs have
+    accurate timestamps.
+  command_template: |
+    ntp authentication-key <ntp_key_id> md5 <ntp_key_value>
+    ntp trusted-key <ntp_key_id>
+    ntp authenticate
+    ntp server <ntp_ip_address> prefer
+    ntp server <secondary_ntp_ip_address>
+  variables:
+    - ntp_ip_address
+    - secondary_ntp_ip_address
+    - ntp_key_id
+    - ntp_key_value
+  not_compliance_conditions:
+    - "NTP server configuration is missing"
+    - "'prefer' keyword is missing on the primary NTP server"
+    - "NTP authentication is not configured ('ntp authenticate' / 'ntp authentication-key' / 'ntp trusted-key' missing)"
+  exceptions:
+    - "No specific exceptions identified for this control."
+  severity: Medium
+  risk: >
+    Drifting clocks lead to inaccurate log timestamps, making forensic analysis and
+    event correlation during a security incident nearly impossible. Unauthenticated
+    NTP allows time-source spoofing, which can be used to undermine certificate
+    validation and log correlation.
+  remediation: >
+    Configure at least two reliable NTP servers, use the 'prefer' keyword for the
+    primary source, and enable NTP authentication.
+  evidence: "'ntp server' lines, 'ntp authenticate'/'ntp authentication-key' lines, and 'show ntp associations' output."
+  deterministic_validation: true
+  manual_review: false
+  config_example: |
+    ntp authentication-key 1 md5 <key> 7
+    ntp trusted-key 1
+    ntp authenticate
+    ntp server 10.10.10.100 prefer
+    ntp server 20.20.20.100
+
+- control_id: control_00010
+  title: "Syslog"
+  explanation: >
+    Enables sending event logs to an external server for system monitoring,
+    auditing, and troubleshooting.
+  command_template: |
+    logging on
+    logging host <ip_syslog_server>
+    logging trap informational
+    logging source-interface <syslog_interface>
+  variables:
+    - ip_syslog_server
+    - syslog_interface
+  not_compliance_conditions:
+    - "'logging on' command is missing"
+    - "Logging host IP address is missing"
+    - "Logging trap level is not set to 'informational'"
+    - "'logging source-interface' is not configured correctly"
+  exceptions:
+    - "No specific exceptions identified for this control."
+  severity: Medium
+  risk: >
+    Without centralized logging, local logs may be overwritten or cleared by an
+    attacker, leaving no trace of unauthorized activity.
+  remediation: >
+    Enable global logging and point it to a secure, external syslog server with an
+    informational trap level.
+  evidence: "'logging' commands in the running configuration."
+  deterministic_validation: true
+  manual_review: false
+  config_example: |
+    logging on
+    logging host 30.30.30.100
+    logging trap informational
+    logging source-interface loopback 0
+
+- control_id: control_00011
+  title: "SNMP"
+  explanation: >
+    Configures the SNMPv3 protocol with encryption and authentication for secure
+    management and monitoring of network devices.
+  command_template: |
+    snmp-server group <group_name> v3 priv
+    snmp-server user <user_name> <group_name> v3 auth sha <auth_password> priv aes 128 <priv_password>
+    snmp-server host <snmp_server_ip> version 3 priv <user_name>
+    snmp-server enable traps
+  variables:
+    - group_name
+    - user_name
+    - auth_password
+    - priv_password
+    - snmp_server_ip
+  not_compliance_conditions:
+    - "SNMPv3 group with 'priv' is not configured"
+    - "SNMPv3 user is not created with SHA/AES configuration"
+    - "SNMP trap host is missing"
+    - "'snmp-server enable traps' command is missing"
+    - "An SNMPv1/v2c community string ('snmp-server community') coexists with the SNMPv3 configuration"
+  exceptions:
+    - "No specific exceptions identified for this control."
+  severity: High
+  risk: >
+    SNMPv1/v2c transmit community strings in clear text. SNMPv3 without 'priv'
+    lacks encryption, exposing monitoring data and control to interception.
+  remediation: >
+    Use SNMPv3 with authentication (SHA) and privacy (AES) exclusively; remove any
+    SNMPv1/v2c community strings.
+  evidence: "'snmp-server' configuration lines and 'show snmp user' output."
+  deterministic_validation: true
+  manual_review: false
+  config_example: |
+    snmp-server group acme_snmp_grp01 v3 priv
+    snmp-server user acme_snmp_user acme_snmp_grp01 v3 auth sha 0123456789 priv aes 128 9876543210
+    snmp-server host 40.40.40.100 version 3 priv acme_snmp_user
+    snmp-server enable traps
+
+- control_id: control_00012
+  title: "Banners"
+  explanation: >
+    Defines legal or informative messages displayed to users when attempting to
+    access the device.
+  command_template: |
+    banner motd $ <message_of_the_day> $
+  variables:
+    - message_of_the_day
+  not_compliance_conditions:
+    - "Banner MOTD is not configured"
+    - "Banner message does not match corporate policy"
+  exceptions:
+    - "No specific exceptions identified for this control."
+  severity: Medium
+  risk: >
+    The absence of legal banners can complicate the legal prosecution of
+    unauthorized users and fails to warn attackers of monitoring.
+  remediation: >
+    Configure a 'banner motd' containing approved legal language regarding
+    authorized access and monitoring.
+  evidence: "'banner motd' section in the running configuration."
+  deterministic_validation: false
+  manual_review: true
+  config_example: |
+    banner motd $ ++This is the message of the day++ $
+
+- control_id: control_00013
+  title: "Passwords"
+  explanation: >
+    Applies global password security policies, including minimum length and
+    encryption of keys stored in the configuration.
+  command_template: |
+    security passwords min-length <minimum_length_number>
+    service password-encryption
+  variables:
+    - minimum_length_number
+  not_compliance_conditions:
+    - "'security passwords min-length' is not configured or below the minimum length requirement"
+    - "'service password-encryption' is missing"
+  exceptions:
+    - "No specific exceptions identified for this control."
+  severity: High
+  risk: >
+    Short or unencrypted passwords are easily cracked via dictionary attacks or
+    discovered within the configuration file if the device is compromised.
+  remediation: >
+    Set a global minimum password length (at least 10) and enable the password
+    encryption service.
+  evidence: "'security passwords min-length' and 'service password-encryption' commands."
+  deterministic_validation: true
+  manual_review: false
+  config_example: |
+    security passwords min-length 10
+    service password-encryption
+
+- control_id: control_00014
+  title: "VTY Lines"
+  explanation: >
+    Configures access and security parameters for console and virtual terminal
+    lines, controlling direct and remote administrative access.
+  command_template: |
+    line console 0
+     password <console_password>
+     login local
+     exec-timeout <minutes> <seconds>
+     logging synchronous
+     exit
+    line vty <start_line_number> <end_line_number>
+     access-class <vty_acl_name> in
+     password <vty_password>
+     login local
+     exec-timeout <minutes> <seconds>
+     transport input <allowed_protocols>
+     logging synchronous
+     exit
+  variables:
+    - console_password
+    - start_line_number
+    - end_line_number
+    - vty_password
+    - allowed_protocols
+    - vty_acl_name
+  not_compliance_conditions:
+    - "Console or VTY passwords are missing"
+    - "'login local' is missing"
+    - "'exec-timeout' is missing"
+    - "'transport input' is not restricted to secure protocols"
+    - "The ACL applied to VTY lines via 'access-class' is permissive (permits unrestricted 'any' source or allows telnet) instead of restrictive"
+  exceptions:
+    - "No specific exceptions identified for this control."
+  severity: High
+  risk: >
+    Open VTY/Console sessions without timeouts can be hijacked. Insecure protocol
+    support allows for credential theft. A permissive ACL negates the value of
+    access control on the management plane.
+  remediation: >
+    Apply 'exec-timeout', 'login local', and restrict transport protocols for all
+    access lines; bind VTY lines to a restrictive ACL scoped to authorized
+    management sources only.
+  evidence: "Configuration blocks for 'line console 0' and 'line vty', and the referenced access-list."
+  deterministic_validation: true
+  manual_review: false
+  config_example: |
+    line vty 0 15
+     access-class VTY_ACL_NAME in
+     exec-timeout 10 0
+     transport input ssh
+     transport output ssh
+     logging synchronous
+     session-timeout 10
+     exec prompt timestamp
+     history size 20
+
+- control_id: control_00015
+  title: "Basic Security"
+  explanation: >
+    Establishes fundamental protection measures, such as the enable password and
+    the creation of a local administrator with full privileges.
+  command_template: |
+    enable secret <enable_password>
+    username <user_name> privilege 15 secret <user_password>
+  variables:
+    - enable_password
+    - user_name
+    - user_password
+  not_compliance_conditions:
+    - "Enable secret is missing"
+    - "Local administrator with privilege 15 is not created"
+  exceptions:
+    - "No specific exceptions identified for this control."
+  severity: High
+  risk: >
+    Failure to secure the privileged mode allows any user with standard access to
+    potentially take full control of the network device.
+  remediation: >
+    Ensure an 'enable secret' and a privilege 15 local administrator account are
+    present and secured.
+  evidence: "'enable secret' and 'username ... privilege 15' in configuration."
+  deterministic_validation: true
+  manual_review: false
+  config_example: |
+    enable secret 0123456789
+
+- control_id: control_00016
+  title: "Mandatory Commands"
+  explanation: >
+    Verifies presence of a baseline set of mandatory hardening commands beyond the
+    individually-scoped controls above, including a Control Plane Policing (CoPP)
+    service-policy applied under 'control-plane'.
+  command_template: |
+    control-plane
+     service-policy input <copp_policy_name>
+  variables:
+    - copp_policy_name
+  not_compliance_conditions:
+    - "One or more mandatory commands from the corporate security policy baseline are absent"
+    - "No 'service-policy input <policy_name>' is applied under 'control-plane' (missing Control Plane Policing)"
+  exceptions:
+    - "No specific exceptions identified for this control."
+  severity: High
+  risk: >
+    Omitting baseline security commands, including CoPP, leaves the device
+    vulnerable to common automated attacks, misconfigurations, and control-plane
+    resource exhaustion (CPU/DoS) from unfiltered traffic.
+  remediation: >
+    Review and apply all commands marked as mandatory in the security policy,
+    including a CoPP service-policy on the control-plane.
+  evidence: "Presence of specific mandatory command strings in running config, including 'service-policy input' under 'control-plane'."
+  deterministic_validation: true
+  manual_review: false
+  config_example: |
+    control-plane
+     service-policy input COPP_POLICY_ACME
+
+- control_id: control_00017
+  title: "Recommended Commands"
+  explanation: >
+    Implements suggested security hardening commands, such as local brute-force
+    protection and robust hashing algorithms.
+  command_template: |
+    username <local_admin> privilege 15 algorithm-type scrypt secret <strong_password>
+    login block-for <blocked_time> attempts <attempts_number> within <attempts_time>
+    login delay <login_delay>
+    login on-failure log
+    login on-success log
+    security passwords min-length <password_length>
+  variables:
+    - local_admin
+    - strong_password
+    - blocked_time
+    - attempts_number
+    - attempts_time
+    - login_delay
+    - password_length
+  not_compliance_conditions:
+    - "'login block-for' or 'login delay' settings are missing"
+    - "'security passwords min-length' is below 10"
+    - "Scrypt algorithm is not configured"
+  exceptions:
+    - "No specific exceptions identified for this control."
+  severity: Medium
+  risk: >
+    Without brute-force protection, attackers can use automated scripts to guess
+    local passwords without being blocked or logged.
+  remediation: "Implement 'login block-for' and 'login delay' to mitigate automated login attempts."
+  evidence: "'login block-for' and 'login delay' commands in configuration."
+  deterministic_validation: true
+  manual_review: false
+  config_example: |
+    NA
+
+- control_id: control_00018
+  title: "Prohibited Commands"
+  explanation: >
+    Verifies the absence of explicitly prohibited or dangerous commands from the
+    corporate security blacklist.
+  command_template: |
+    ! Prohibited command patterns are policy-defined, evaluated as a blacklist
+    ! rather than a single command template.
+  variables: []
+  not_compliance_conditions:
+    - "A prohibited command (e.g. 'no logging', 'ip http server') is present in the running configuration"
+  exceptions:
+    - "No specific exceptions identified for this control."
+  severity: High
+  risk: >
+    Executing prohibited commands (e.g., 'no logging', 'ip http server') can create
+    significant security holes or hide malicious activity.
+  remediation: "Disable or remove any prohibited services or commands as listed in the corporate blacklist."
+  evidence: "Absence of prohibited command strings in the running configuration."
+  deterministic_validation: true
+  manual_review: false
+  config_example: |
+    NA
