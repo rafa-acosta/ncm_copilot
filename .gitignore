@@ -14,5 +14,8 @@ __pycache__/
 # Generated compliance reports
 reports/
 
+# Generated golden configs
+output/
+
 # OS
 .DS_Store

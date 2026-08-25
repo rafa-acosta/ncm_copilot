@@ -1,0 +1,156 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ncm-copilot/schemas/device_vars.schema.json",
+  "title": "Golden Config Creator device variables",
+  "description": "Validates the SHAPE of whatever control sections are present in device_vars.json. Every control section is optional (partial input is expected and handled at render time via --strict / <MISSING:...> markers, not here) - if a section IS present, its variables must have the right shape/type.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "control_00001": {
+      "type": "object",
+      "properties": { "hostname": { "type": "string", "minLength": 1 } },
+      "additionalProperties": false
+    },
+    "control_00002": {
+      "type": "object",
+      "properties": { "company_name": { "type": "string", "minLength": 1 } },
+      "additionalProperties": false
+    },
+    "control_00003": {
+      "type": "object",
+      "properties": { "tacacs_group": { "type": "string", "minLength": 1 } },
+      "additionalProperties": false
+    },
+    "control_00004": {
+      "type": "object",
+      "properties": {
+        "tacacs_servers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string", "minLength": 1 },
+              "address": { "type": "string", "minLength": 1 },
+              "key": { "type": "string", "minLength": 1 },
+              "timeout": { "type": "integer", "minimum": 1 }
+            },
+            "additionalProperties": false
+          }
+        },
+        "tacacs_group_name": { "type": "string", "minLength": 1 },
+        "source_interface": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "control_00005": {
+      "type": "object",
+      "properties": {
+        "user": { "type": "string", "minLength": 1 },
+        "privilege_level": { "type": "integer", "minimum": 0, "maximum": 15 },
+        "password": { "type": "string", "minLength": 1 },
+        "secret_psswd": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "control_00006": {
+      "type": "object",
+      "properties": {
+        "hostname": { "type": "string", "minLength": 1 },
+        "domain_name": { "type": "string", "minLength": 1 },
+        "ssh_version": { "type": "integer", "enum": [1, 2] },
+        "ssh_timeout": { "type": "integer", "minimum": 1 },
+        "ssh_auth_retries": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "control_00008": {
+      "type": "object",
+      "properties": { "vty_line_numbers": { "type": "string", "minLength": 1 } },
+      "additionalProperties": false
+    },
+    "control_00009": {
+      "type": "object",
+      "properties": {
+        "ntp_ip_address": { "type": "string", "minLength": 1 },
+        "secondary_ntp_ip_address": { "type": "string", "minLength": 1 },
+        "ntp_key_id": { "type": "integer", "minimum": 1 },
+        "ntp_key_value": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "control_00010": {
+      "type": "object",
+      "properties": {
+        "ip_syslog_server": { "type": "string", "minLength": 1 },
+        "syslog_interface": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "control_00011": {
+      "type": "object",
+      "properties": {
+        "group_name": { "type": "string", "minLength": 1 },
+        "user_name": { "type": "string", "minLength": 1 },
+        "auth_password": { "type": "string", "minLength": 1 },
+        "priv_password": { "type": "string", "minLength": 1 },
+        "snmp_server_ip": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "control_00012": {
+      "type": "object",
+      "properties": { "message_of_the_day": { "type": "string", "minLength": 1 } },
+      "additionalProperties": false
+    },
+    "control_00013": {
+      "type": "object",
+      "properties": { "minimum_length_number": { "type": "integer", "minimum": 1 } },
+      "additionalProperties": false
+    },
+    "control_00014": {
+      "type": "object",
+      "properties": {
+        "console_password": { "type": "string", "minLength": 1 },
+        "vty_password": { "type": "string", "minLength": 1 },
+        "start_line_number": { "type": "integer", "minimum": 0 },
+        "end_line_number": { "type": "integer", "minimum": 0 },
+        "minutes": { "type": "integer", "minimum": 0 },
+        "seconds": { "type": "integer", "minimum": 0 },
+        "allowed_protocols": { "type": "string", "minLength": 1 },
+        "vty_acl_name": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "control_00015": {
+      "type": "object",
+      "properties": {
+        "enable_password": { "type": "string", "minLength": 1 },
+        "user_name": { "type": "string", "minLength": 1 },
+        "user_password": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "control_00016": {
+      "type": "object",
+      "properties": { "copp_policy_name": { "type": "string", "minLength": 1 } },
+      "additionalProperties": false
+    },
+    "control_00017": {
+      "type": "object",
+      "properties": {
+        "local_admin": { "type": "string", "minLength": 1 },
+        "strong_password": { "type": "string", "minLength": 1 },
+        "blocked_time": { "type": "integer", "minimum": 0 },
+        "attempts_number": { "type": "integer", "minimum": 1 },
+        "attempts_time": { "type": "integer", "minimum": 1 },
+        "login_delay": { "type": "integer", "minimum": 0 },
+        "password_length": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "control_00018": {
+      "type": "object",
+      "additionalProperties": false
+    }
+  }
+}

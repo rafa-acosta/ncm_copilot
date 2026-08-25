@@ -123,21 +123,22 @@
     and administrative access control.
   command_template: |
     aaa new-model
-    tacacs server <tacacs_server_name_1>
-     key 7 <key_value>
-     timeout <timeout_value>
-    tacacs server <tacacs_server_name_2>
-     key 7 <key_value>
-     timeout <timeout_value>
-    aaa group server tacacs+ <tacacs_group_name>
-     server name <tacacs_server_name_1>
-     server name <tacacs_server_name_2>
-     ip tacacs source-interface <source_interface>
+    {% for server in tacacs_servers %}
+    tacacs server {{ server.name }}
+     address ipv4 {{ server.address }}
+     key 6 {{ server.key }}
+     timeout {{ server.timeout }}
+    {% endfor %}
+    aaa group server tacacs+ {{ tacacs_group_name }}
+    {% for server in tacacs_servers %}
+     server name {{ server.name }}
+    {% endfor %}
+     ip tacacs source-interface {{ source_interface }}
+  # Pre-converted Jinja (not the <var> convention used by every other control): this is the
+  # one control with a genuinely repeating structure (N TACACS servers), rendered by the
+  # Golden Config Creator via a {% for %} loop. See GOLDEN_CONFIG_CREATOR.md section 12.
   variables:
-    - tacacs_server_name_1
-    - tacacs_server_name_2
-    - key_value
-    - timeout_value
+    - tacacs_servers
     - tacacs_group_name
     - source_interface
   not_compliance_conditions:
@@ -255,8 +256,8 @@
     sending credentials in clear text.
   command_template: |
     line vty <vty_line_numbers>
-    transport input ssh
-    transport output ssh
+     transport input ssh
+     transport output ssh
   variables:
     - vty_line_numbers
   not_compliance_conditions:
@@ -462,7 +463,7 @@
     Configures access and security parameters for console and virtual terminal
     lines, controlling direct and remote administrative access.
   command_template: |
-    line console 0
+    line con 0
      password <console_password>
      login local
      exec-timeout <minutes> <seconds>
