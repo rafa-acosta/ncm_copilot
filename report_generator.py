@@ -16,6 +16,7 @@ from compliance_engine import (
 
 TEMPLATE_DIR = Path(__file__).parent / "templates"
 TEMPLATE_NAME = "report_template.html"
+FLEET_TEMPLATE_NAME = "fleet_report_template.html"
 
 SEVERITY_ORDER = ["High", "Medium", "Low"]
 
@@ -62,6 +63,63 @@ def render_html(results: list[ControlResult], output_path: Path, device_name: st
         status_labels=STATUS_LABELS,
         device_name=device_name,
     )
+    output_path = Path(output_path)
+    output_path.write_text(html, encoding="utf-8")
+    return output_path
+
+
+def build_fleet_summary(results_by_device: dict[str, list[ControlResult]]) -> dict:
+    """Aggregate per-device summaries plus fleet totals and the most common failures."""
+    per_device = {name: build_summary(results) for name, results in results_by_device.items()}
+    device_count = len(per_device)
+    avg_compliance = (
+        round(sum(s["compliance_pct"] for s in per_device.values()) / device_count, 1) if device_count else 0.0
+    )
+    fully_compliant = sum(1 for s in per_device.values() if s["counts"][STATUS_FAIL] == 0)
+
+    failures: dict[str, dict] = {}
+    for device_name, results in results_by_device.items():
+        for result in results:
+            if result.status != STATUS_FAIL:
+                continue
+            entry = failures.setdefault(
+                result.control_id,
+                {"control_id": result.control_id, "title": result.title, "severity": result.severity,
+                 "fail_count": 0, "device_names": []},
+            )
+            entry["fail_count"] += 1
+            entry["device_names"].append(device_name)
+
+    top_failures = sorted(failures.values(), key=lambda f: f["fail_count"], reverse=True)
+
+    return {
+        "per_device": per_device,
+        "device_count": device_count,
+        "avg_compliance_pct": avg_compliance,
+        "fully_compliant_count": fully_compliant,
+        "top_failures": top_failures,
+    }
+
+
+def render_fleet_html(
+    results_by_device: dict[str, list[ControlResult]],
+    report_links: dict[str, str],
+    output_path: Path,
+) -> Path:
+    """Render the fleet-level summary report and return `output_path`."""
+    env = Environment(
+        loader=FileSystemLoader(str(TEMPLATE_DIR)),
+        autoescape=select_autoescape(["html"]),
+    )
+    template = env.get_template(FLEET_TEMPLATE_NAME)
+    fleet = build_fleet_summary(results_by_device)
+    devices = [
+        {"name": name, "link": report_links[name], **fleet["per_device"][name]}
+        for name in results_by_device
+    ]
+    devices.sort(key=lambda d: d["compliance_pct"])  # worst first
+
+    html = template.render(fleet=fleet, devices=devices, status_labels=STATUS_LABELS)
     output_path = Path(output_path)
     output_path.write_text(html, encoding="utf-8")
     return output_path

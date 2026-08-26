@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>IOS-XE Fleet Compliance Report</title>
+<style>
+  :root {
+    --pass: #1e7e34; --pass-bg: #e6f4ea;
+    --fail: #b02a37; --fail-bg: #fbe7e9;
+    --exception: #8a6d00; --exception-bg: #fff6da;
+    --manual: #495057; --manual-bg: #eceff1;
+    --border: #d0d7de;
+    --text: #1b1f23;
+    --muted: #57606a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    margin: 2rem;
+    color: var(--text);
+    background: #ffffff;
+  }
+  h1 { margin-bottom: 0.2rem; }
+  .subtitle { color: var(--muted); margin-top: 0; }
+  .dashboard { display: flex; gap: 1rem; flex-wrap: wrap; margin: 1.5rem 0 2rem 0; }
+  .stat {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.9rem 1.4rem;
+    min-width: 110px;
+  }
+  .stat .value { font-size: 1.8rem; font-weight: 700; line-height: 1.1; }
+  .stat .label {
+    font-size: 0.78rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  section { margin-top: 2.2rem; }
+  section h2 {
+    border-bottom: 2px solid var(--border);
+    padding-bottom: 0.3rem;
+    font-size: 1.2rem;
+  }
+  table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; }
+  tr.data-row { border-bottom: 1px solid var(--border); }
+  td, th { text-align: left; padding: 0.6rem 0.5rem; vertical-align: top; }
+  th { font-size: 0.8rem; text-transform: uppercase; color: var(--muted); }
+  td.numeric, th.numeric { text-align: right; }
+  a { color: #0969da; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .status-badge {
+    display: inline-block;
+    padding: 0.15rem 0.65rem;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .status-pass { background: var(--pass-bg); color: var(--pass); }
+  .status-fail { background: var(--fail-bg); color: var(--fail); }
+  .status-exception { background: var(--exception-bg); color: var(--exception); }
+  .status-manual_review { background: var(--manual-bg); color: var(--manual); }
+  .compliance-pill {
+    display: inline-block;
+    padding: 0.15rem 0.65rem;
+    border-radius: 999px;
+    font-weight: 600;
+    font-size: 0.85rem;
+  }
+  .compliance-high { background: var(--pass-bg); color: var(--pass); }
+  .compliance-mid { background: var(--exception-bg); color: var(--exception); }
+  .compliance-low { background: var(--fail-bg); color: var(--fail); }
+  .severity-High { color: var(--fail); font-weight: 600; }
+  .severity-Medium { color: var(--exception); font-weight: 600; }
+  .severity-Low { color: var(--muted); font-weight: 600; }
+  .empty-state { color: var(--muted); font-style: italic; padding: 0.6rem 0; }
+</style>
+</head>
+<body>
+  <h1>Cisco IOS-XE Fleet Compliance Report</h1>
+  <p class="subtitle">{{ fleet.device_count }} device(s) audited against the same golden config baseline</p>
+
+  <div class="dashboard">
+    <div class="stat">
+      <div class="value">{{ fleet.device_count }}</div>
+      <div class="label">Devices Audited</div>
+    </div>
+    <div class="stat">
+      <div class="value">{{ fleet.avg_compliance_pct }}%</div>
+      <div class="label">Avg Compliance</div>
+    </div>
+    <div class="stat pass">
+      <div class="value">{{ fleet.fully_compliant_count }}</div>
+      <div class="label">Fully Compliant</div>
+    </div>
+    <div class="stat fail">
+      <div class="value">{{ fleet.top_failures|length }}</div>
+      <div class="label">Controls With Failures</div>
+    </div>
+  </div>
+
+  <section>
+    <h2>Devices (worst compliance first)</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Device</th>
+          <th class="numeric">Compliance</th>
+          <th class="numeric">Pass</th>
+          <th class="numeric">Fail</th>
+          <th class="numeric">Exception</th>
+          <th class="numeric">Manual Review</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for d in devices %}
+        <tr class="data-row">
+          <td><a href="{{ d.link }}">{{ d.name }}</a></td>
+          <td class="numeric">
+            <span class="compliance-pill {{ 'compliance-high' if d.compliance_pct >= 80 else ('compliance-mid' if d.compliance_pct >= 50 else 'compliance-low') }}">
+              {{ d.compliance_pct }}%
+            </span>
+          </td>
+          <td class="numeric">{{ d.counts.PASS }}</td>
+          <td class="numeric">{{ d.counts.FAIL }}</td>
+          <td class="numeric">{{ d.counts.EXCEPTION }}</td>
+          <td class="numeric">{{ d.counts.MANUAL_REVIEW }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Most Common Failures Across the Fleet</h2>
+    {% if fleet.top_failures %}
+    <table>
+      <thead>
+        <tr>
+          <th>Control</th>
+          <th>Severity</th>
+          <th class="numeric">Devices Failing</th>
+          <th>Affected Devices</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for f in fleet.top_failures %}
+        <tr class="data-row">
+          <td><strong>{{ f.title }}</strong> <span style="color: var(--muted); font-size: 0.85rem;">({{ f.control_id }})</span></td>
+          <td><span class="severity-{{ f.severity }}">{{ f.severity }}</span></td>
+          <td class="numeric">{{ f.fail_count }}</td>
+          <td>{{ f.device_names|join(", ") }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="empty-state">No failures found across any audited device.</p>
+    {% endif %}
+  </section>
+</body>
+</html>

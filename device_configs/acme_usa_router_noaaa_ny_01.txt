@@ -1,0 +1,165 @@
+﻿hostname ACME_USA_ROUTER_INTERNET_datacenter_01
+!
+boot-start-marker
+boot-end-marker
+!
+!
+vrf definition Mgmt-intf
+!
+security passwords min-length 10
+logging buffered 16384
+enable secret 5 $1$0EBQ$tu96Nh4PCj.kGtRz4w3pc/
+!
+!         
+!
+!
+clock timezone CST -6 0
+mmi polling-interval 60
+no mmi auto-configure
+no mmi pvc
+mmi snmp-timeout 180
+!
+crypto key generate rsa modulus 2048
+!
+!
+!
+!
+!
+!
+!
+!
+!
+!
+ip domain name acme.com
+ip cef
+login block-for 120 attempts 3 within 60
+no ipv6 cef
+!         
+multilink bundle-name authenticated
+!
+!
+!
+!
+username admin privilege 15 secret 8 $8$2UeO.7I6s9PbgP$w6N1qJPsHtPfn4Z1k3icD9T1twSGXEm1BrTGOH1f6gA
+username nimda privilege 15 secret 5 $1$Phub$6cnN/mzPVqWGs/zp3t6M5.
+!
+redundancy
+!
+!
+! 
+!
+!
+!
+!
+!
+!
+!
+!
+!
+!         
+!
+!
+interface GigabitEthernet0/0
+ description lan_interface
+ ip address 192.168.100.1 255.255.255.252
+ duplex auto
+ speed auto
+ media-type rj45
+!
+interface GigabitEthernet0/1
+ description wan_interface
+ ip address 186.0.0.1 255.255.255.0
+ duplex auto
+ speed auto
+ media-type rj45
+!
+ip forward-protocol nd
+!
+!
+no ip http server
+no ip http secure-server
+ip ssh time-out 60
+ip ssh version 2
+!
+ip access-list extended VTY-OPEN
+ remark ACL permisiva para VTY - SOLO LAB/TESTING
+ permit tcp any any eq 22
+ permit tcp any any eq telnet
+ deny   ip any any log
+!
+logging history alerts
+logging host 10.10.10.1
+ipv6 ioam timestamp
+!
+!
+tacacs server ACME-TEAM-TACACS-01
+ key 7 123456789123456789
+ timeout 5
+tacacs server ACME-TEAM-TACACS-02
+ key 7 123456789123456789
+ timeout 5
+!
+!
+!
+control-plane
+!         
+alias exec siib sh ip int br
+privilege exec level 0 dir
+privilege exec level 0 traceroute
+privilege exec level 0 ping
+privilege exec level 0 terminal monitor
+privilege exec level 0 terminal
+privilege exec level 0 show ip route
+privilege exec level 0 show ip
+privilege exec level 0 show running-config
+privilege exec level 0 show configuration
+privilege exec level 0 show logging
+privilege exec level 0 show
+banner exec ^C
+**************************************************************************
+* IOSv is strictly limited to use for evaluation, demonstration and IOS  *
+* education. IOSv is provided as-is and is not supported by Cisco's      *
+* Technical Advisory Center. Any use or disclosure, in whole or in part, *
+* of the IOSv Software or Documentation to any third party for any       *
+* purposes is expressly prohibited except as otherwise authorized by     *
+* Cisco in writing.                                                      *
+**************************************************************************^C
+banner incoming ^C
+**************************************************************************
+* IOSv is strictly limited to use for evaluation, demonstration and IOS  *
+* education. IOSv is provided as-is and is not supported by Cisco's      *
+* Technical Advisory Center. Any use or disclosure, in whole or in part, *
+* of the IOSv Software or Documentation to any third party for any       *
+* purposes is expressly prohibited except as otherwise authorized by     *
+* Cisco in writing.                                                      *
+**************************************************************************^C
+banner login ^CC
+Unauthorized access is prohibited. All activity is monitored.
+^C
+banner motd ^CC
+*******************************************************************
+AUTHORIZED USE ONLY
+This system and its associated resources are restricted to authorized users. Unauthorized access or use is prohibited and may be subject to disciplinary action and legal penalties. System activity may be monitored and recorded. For assistance, contact yo
+********************************************************************^C
+!
+line con 0
+ logging synchronous
+line aux 0
+ exec-timeout 0 1
+ no exec
+line vty 0 4
+ access-class VTY-OPEN in
+ exec-timeout 5 0
+ transport input ssh
+line vty 5 15
+ access-class VTY-OPEN in
+ exec-timeout 5 0
+ transport input ssh
+!
+no scheduler allocate
+ntp server 176.10.10.1
+!
+end
+
+
+ACME_USA_ROUTER_INTERNET_datacenter_01#$

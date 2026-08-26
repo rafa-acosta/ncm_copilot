@@ -1,6 +1,6 @@
 """CLI entrypoint for the Cisco IOS-XE Config Compliance Checker.
 
-Usage:
+Single-device usage:
     python main.py \\
         --device-config device_config.txt \\
         --golden-config golden_config.txt \\
@@ -9,6 +9,15 @@ Usage:
         --formats html,pdf \\
         [--priority-only] \\
         [--exceptions exceptions.yaml]
+
+Batch usage (audit every *.txt config in a folder against the same golden
+config, plus one fleet-level summary report):
+    python main.py \\
+        --device-config-dir ./device_configs \\
+        --golden-config golden_config.txt \\
+        --controls controls.yaml \\
+        --output-dir ./reports \\
+        --formats html,pdf
 """
 
 from __future__ import annotations
@@ -18,8 +27,8 @@ from pathlib import Path
 import click
 import yaml
 
-from compliance_engine import PRIORITY_CONTROL_IDS, ControlEvaluator
-from report_generator import render_html, render_pdf
+from compliance_engine import PRIORITY_CONTROL_IDS, ControlEvaluator, ControlResult
+from report_generator import render_fleet_html, render_html, render_pdf
 
 
 def load_controls(path: Path) -> list[dict]:
@@ -37,11 +46,40 @@ def load_exceptions(path: Path | None) -> dict[str, str]:
     return dict(data)
 
 
+def _evaluate_device(
+    device_config_path: Path,
+    golden_config: str,
+    controls: list[dict],
+    exceptions: dict[str, str],
+    report_dir: Path,
+    requested_formats: set[str],
+) -> list[ControlResult]:
+    """Evaluate one device config and write its report(s) into `report_dir`."""
+    device_config = device_config_path.read_text(encoding="utf-8")
+    evaluator = ControlEvaluator(exceptions=exceptions)
+    results = [evaluator.evaluate_control(c, device_config, golden_config) for c in controls]
+
+    report_dir.mkdir(parents=True, exist_ok=True)
+    html_path = report_dir / "report.html"
+    if requested_formats & {"html", "pdf"}:
+        render_html(results, html_path, device_name=device_config_path.stem)
+    if "pdf" in requested_formats:
+        render_pdf(html_path, report_dir / "report.pdf")
+        if "html" not in requested_formats:
+            html_path.unlink(missing_ok=True)
+    return results
+
+
 @click.command()
 @click.option(
-    "--device-config", "device_config_path", required=True,
+    "--device-config", "device_config_path", default=None,
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
-    help="Path to the device's running-config (plain text).",
+    help="Path to a single device's running-config (plain text). Mutually exclusive with --device-config-dir.",
+)
+@click.option(
+    "--device-config-dir", "device_config_dir", default=None,
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    help="Directory of *.txt device configs to audit in batch. Mutually exclusive with --device-config.",
 )
 @click.option(
     "--golden-config", "golden_config_path", required=True,
@@ -72,7 +110,8 @@ def load_exceptions(path: Path | None) -> dict[str, str]:
     help="Optional YAML file mapping control_id -> exception reason for this audit run.",
 )
 def main(
-    device_config_path: Path,
+    device_config_path: Path | None,
+    device_config_dir: Path | None,
     golden_config_path: Path,
     controls_path: Path,
     output_dir: Path,
@@ -80,8 +119,10 @@ def main(
     priority_only: bool,
     exceptions_path: Path | None,
 ) -> None:
-    """Audit an IOS-XE device configuration against a golden config baseline."""
-    device_config = device_config_path.read_text(encoding="utf-8")
+    """Audit one or more IOS-XE device configurations against a golden config baseline."""
+    if bool(device_config_path) == bool(device_config_dir):
+        raise click.UsageError("Provide exactly one of --device-config or --device-config-dir.")
+
     golden_config = golden_config_path.read_text(encoding="utf-8")
     controls = load_controls(controls_path)
     exceptions = load_exceptions(exceptions_path)
@@ -89,31 +130,59 @@ def main(
     if priority_only:
         controls = [c for c in controls if c["control_id"] in PRIORITY_CONTROL_IDS]
 
-    evaluator = ControlEvaluator(exceptions=exceptions)
-    results = [evaluator.evaluate_control(c, device_config, golden_config) for c in controls]
-
-    output_dir.mkdir(parents=True, exist_ok=True)
     requested_formats = {f.strip().lower() for f in formats.split(",") if f.strip()}
     unknown = requested_formats - {"html", "pdf"}
     if unknown:
         raise click.BadParameter(f"Unsupported format(s): {', '.join(sorted(unknown))}", param_hint="--formats")
 
-    html_path = output_dir / "report.html"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    if device_config_path:
+        results = _evaluate_device(
+            device_config_path, golden_config, controls, exceptions, output_dir, requested_formats
+        )
+        if "html" in requested_formats:
+            click.echo(f"HTML report written to {output_dir / 'report.html'}")
+        if "pdf" in requested_formats:
+            click.echo(f"PDF report written to {output_dir / 'report.pdf'}")
+
+        fail_count = sum(1 for r in results if r.status == "FAIL")
+        click.echo(f"Evaluated {len(results)} controls: {fail_count} FAIL.")
+        raise SystemExit(1 if fail_count else 0)
+
+    # Batch mode: one subfolder per device, plus a fleet-level summary report.
+    device_files = sorted(device_config_dir.glob("*.txt"))
+    if not device_files:
+        raise click.UsageError(f"No *.txt device config files found in {device_config_dir}.")
+
+    results_by_device: dict[str, list[ControlResult]] = {}
+    report_links: dict[str, str] = {}
+    total_fail = 0
+    for device_file in device_files:
+        name = device_file.stem
+        results = _evaluate_device(
+            device_file, golden_config, controls, exceptions, output_dir / name, requested_formats
+        )
+        results_by_device[name] = results
+        report_links[name] = f"{name}/report.html"
+        fail_count = sum(1 for r in results if r.status == "FAIL")
+        total_fail += fail_count
+        click.echo(f"{name}: {len(results)} controls, {fail_count} FAIL")
+
+    fleet_html_path = output_dir / "fleet_report.html"
     if requested_formats & {"html", "pdf"}:
-        render_html(results, html_path, device_name=device_config_path.stem)
+        render_fleet_html(results_by_device, report_links, fleet_html_path)
     if "html" in requested_formats:
-        click.echo(f"HTML report written to {html_path}")
-
+        click.echo(f"Fleet report written to {fleet_html_path}")
     if "pdf" in requested_formats:
-        pdf_path = output_dir / "report.pdf"
-        render_pdf(html_path, pdf_path)
-        click.echo(f"PDF report written to {pdf_path}")
+        fleet_pdf_path = output_dir / "fleet_report.pdf"
+        render_pdf(fleet_html_path, fleet_pdf_path)
+        click.echo(f"Fleet PDF report written to {fleet_pdf_path}")
         if "html" not in requested_formats:
-            html_path.unlink(missing_ok=True)
+            fleet_html_path.unlink(missing_ok=True)
 
-    fail_count = sum(1 for r in results if r.status == "FAIL")
-    click.echo(f"Evaluated {len(results)} controls: {fail_count} FAIL.")
-    raise SystemExit(1 if fail_count else 0)
+    click.echo(f"Audited {len(device_files)} device(s): {total_fail} total FAIL across the fleet.")
+    raise SystemExit(1 if total_fail else 0)
 
 
 if __name__ == "__main__":
