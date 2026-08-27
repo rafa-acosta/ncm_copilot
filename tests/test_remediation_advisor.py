@@ -58,7 +58,12 @@ def _real_report(tmp_path: Path) -> ComplianceReport:
     golden_config = GOLDEN_CONFIG_PATH.read_text(encoding="utf-8")
     evaluator = ControlEvaluator()
     results = [evaluator.evaluate_control(c, device_config, golden_config) for c in controls]
-    return build_report_json(results, device_name="device_config")
+    return build_report_json(
+        results,
+        device_name="device_config",
+        device_config_path=str(DEVICE_CONFIG_PATH),
+        golden_config_path=str(GOLDEN_CONFIG_PATH),
+    )
 
 
 # ---- select_findings ---------------------------------------------------------
@@ -182,6 +187,35 @@ def test_render_markdown_groups_by_severity_and_shows_command_block(tmp_path):
     assert "`<group_name>`" in text
 
 
+def test_render_markdown_shows_device_and_golden_config_paths(tmp_path):
+    finding = ra.Finding(
+        control_id="control_00001", title="Hostname", severity="Low", risk="r",
+        remediation_recommendation="m", command_block="c",
+        still_needed_variables=[], explanation="e",
+    )
+    output_path = tmp_path / "briefing.md"
+    ra.render_markdown(
+        [finding], "RTR01", "llama.cpp (fake)", output_path, "2026-08-26 12:00",
+        device_config_path="samples/device_config.txt", golden_config_path="samples/golden_config.txt",
+    )
+    text = output_path.read_text(encoding="utf-8")
+    assert "samples/device_config.txt" in text
+    assert "samples/golden_config.txt" in text
+
+
+def test_render_markdown_omits_path_lines_when_not_given(tmp_path):
+    finding = ra.Finding(
+        control_id="control_00001", title="Hostname", severity="Low", risk="r",
+        remediation_recommendation="m", command_block="c",
+        still_needed_variables=[], explanation="e",
+    )
+    output_path = tmp_path / "briefing.md"
+    ra.render_markdown([finding], "RTR01", "llama.cpp (fake)", output_path, "2026-08-26 12:00")
+    text = output_path.read_text(encoding="utf-8")
+    assert "Device config:" not in text
+    assert "Golden config:" not in text
+
+
 def test_render_briefing_json_includes_device_vars_patch(tmp_path):
     finding = ra.Finding(
         control_id="control_00011", title="SNMP", severity="High", risk="r",
@@ -224,3 +258,10 @@ def test_cli_produces_briefing_with_fake_backend(tmp_path, monkeypatch):
     assert md_path.exists()
     assert json_path.exists()
     assert "finding(s) briefed" in result.output
+
+    md_text = md_path.read_text(encoding="utf-8")
+    assert str(DEVICE_CONFIG_PATH) in md_text
+    assert str(GOLDEN_CONFIG_PATH) in md_text
+    json_data = json.loads(json_path.read_text(encoding="utf-8"))
+    assert json_data["device_config_path"] == str(DEVICE_CONFIG_PATH)
+    assert json_data["golden_config_path"] == str(GOLDEN_CONFIG_PATH)

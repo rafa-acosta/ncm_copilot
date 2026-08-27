@@ -1,5 +1,8 @@
 # Compliance Remediation Briefing — {{ device_name }}
 Generated: {{ generated_at }} | Backend used: {{ backend_label }}
+{% if device_config_path %}Device config: `{{ device_config_path }}`
+{% endif %}{% if golden_config_path %}Golden config: `{{ golden_config_path }}`
+{% endif %}
 {% if not grouped_findings %}
 No FAILED controls at or above the requested severity threshold. Nothing to remediate.
 {% endif %}

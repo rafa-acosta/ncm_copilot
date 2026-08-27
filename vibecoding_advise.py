@@ -99,8 +99,14 @@ def main(
     ]
 
     generated_at = datetime.now().strftime("%Y-%m-%d %H:%M")
-    render_markdown(findings, report.device_name, backend_label, output_md_path, generated_at)
-    render_briefing_json(findings, report.device_name, backend_label, output_json_path, generated_at)
+    render_markdown(
+        findings, report.device_name, backend_label, output_md_path, generated_at,
+        device_config_path=report.device_config_path, golden_config_path=report.golden_config_path,
+    )
+    render_briefing_json(
+        findings, report.device_name, backend_label, output_json_path, generated_at,
+        device_config_path=report.device_config_path, golden_config_path=report.golden_config_path,
+    )
 
     click.echo(f"Markdown briefing written to {output_md_path}")
     click.echo(f"JSON briefing written to {output_json_path}")

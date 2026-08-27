@@ -33,3 +33,7 @@ class ComplianceReport(BaseModel):
     device_name: str
     generated_at: datetime
     results: list[ControlReportEntry]
+    # Default "" (not required) so a report.json generated before these fields
+    # existed still loads without a validation error.
+    device_config_path: str = ""
+    golden_config_path: str = ""

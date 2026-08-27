@@ -2,8 +2,19 @@
 
 from __future__ import annotations
 
+import json
+
 from compliance_engine import STATUS_EXCEPTION, STATUS_FAIL, STATUS_MANUAL_REVIEW, STATUS_PASS, ControlResult
-from report_generator import build_fleet_summary, build_summary, group_by_severity, render_fleet_html, render_html, render_pdf
+from report_generator import (
+    build_fleet_summary,
+    build_report_json,
+    build_summary,
+    group_by_severity,
+    render_fleet_html,
+    render_html,
+    render_json,
+    render_pdf,
+)
 
 
 def _result(control_id: str, status: str, severity: str = "High") -> ControlResult:
@@ -115,3 +126,60 @@ def test_render_fleet_html_links_and_worst_first_ordering(tmp_path):
     # worst-first: rtr01 (20%) must appear before rtr02 (100%) in the device table
     assert html.index(">rtr01<") < html.index(">rtr02<")
     assert "control_00003" in html and "control_00004" in html
+
+
+# ---- JSON report (build_report_json / render_json) ----------------------------
+
+def test_build_report_json_defaults_paths_to_empty_string():
+    report = build_report_json(SAMPLE_RESULTS, device_name="RTR01")
+    assert report.device_config_path == ""
+    assert report.golden_config_path == ""
+
+
+def test_build_report_json_includes_config_paths():
+    report = build_report_json(
+        SAMPLE_RESULTS,
+        device_name="RTR01",
+        device_config_path="/path/to/device_config.txt",
+        golden_config_path="/path/to/golden_config.txt",
+    )
+    assert report.device_config_path == "/path/to/device_config.txt"
+    assert report.golden_config_path == "/path/to/golden_config.txt"
+    assert report.device_name == "RTR01"
+    assert len(report.results) == len(SAMPLE_RESULTS)
+
+
+def test_render_json_writes_valid_report_with_config_paths(tmp_path):
+    output_path = tmp_path / "report.json"
+    render_json(
+        SAMPLE_RESULTS,
+        output_path,
+        device_name="RTR01",
+        device_config_path="samples/device_config.txt",
+        golden_config_path="samples/golden_config.txt",
+    )
+    data = json.loads(output_path.read_text(encoding="utf-8"))
+
+    assert data["device_name"] == "RTR01"
+    assert data["device_config_path"] == "samples/device_config.txt"
+    assert data["golden_config_path"] == "samples/golden_config.txt"
+    assert len(data["results"]) == len(SAMPLE_RESULTS)
+    assert data["results"][0]["control_id"] == SAMPLE_RESULTS[0].control_id
+
+
+def test_render_json_old_style_report_without_config_paths_still_loads(tmp_path):
+    # A report.json written before device_config_path/golden_config_path existed
+    # must still validate - these fields default to "" rather than being required.
+    from report_schema import ComplianceReport
+
+    output_path = tmp_path / "old_report.json"
+    old_style = {
+        "device_name": "RTR01",
+        "generated_at": "2026-01-01T00:00:00",
+        "results": [],
+    }
+    output_path.write_text(json.dumps(old_style), encoding="utf-8")
+
+    report = ComplianceReport.model_validate_json(output_path.read_text(encoding="utf-8"))
+    assert report.device_config_path == ""
+    assert report.golden_config_path == ""

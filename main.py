@@ -48,6 +48,7 @@ def load_exceptions(path: Path | None) -> dict[str, str]:
 
 def _evaluate_device(
     device_config_path: Path,
+    golden_config_path: Path,
     golden_config: str,
     controls: list[dict],
     exceptions: dict[str, str],
@@ -68,7 +69,13 @@ def _evaluate_device(
         if "html" not in requested_formats:
             html_path.unlink(missing_ok=True)
     if "json" in requested_formats:
-        render_json(results, report_dir / "report.json", device_name=device_config_path.stem)
+        render_json(
+            results,
+            report_dir / "report.json",
+            device_name=device_config_path.stem,
+            device_config_path=str(device_config_path),
+            golden_config_path=str(golden_config_path),
+        )
     return results
 
 
@@ -141,7 +148,7 @@ def main(
 
     if device_config_path:
         results = _evaluate_device(
-            device_config_path, golden_config, controls, exceptions, output_dir, requested_formats
+            device_config_path, golden_config_path, golden_config, controls, exceptions, output_dir, requested_formats
         )
         if "html" in requested_formats:
             click.echo(f"HTML report written to {output_dir / 'report.html'}")
@@ -165,7 +172,7 @@ def main(
     for device_file in device_files:
         name = device_file.stem
         results = _evaluate_device(
-            device_file, golden_config, controls, exceptions, output_dir / name, requested_formats
+            device_file, golden_config_path, golden_config, controls, exceptions, output_dir / name, requested_formats
         )
         results_by_device[name] = results
         report_links[name] = f"{name}/report.html"

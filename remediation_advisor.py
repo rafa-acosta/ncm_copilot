@@ -134,6 +134,8 @@ def render_markdown(
     backend_label: str,
     output_path: str | Path,
     generated_at: str,
+    device_config_path: str = "",
+    golden_config_path: str = "",
 ) -> Path:
     """Render the Jinja2 markdown briefing template and return `output_path`."""
     env = Environment(loader=FileSystemLoader(str(TEMPLATE_DIR)), autoescape=select_autoescape(disabled_extensions=(".j2",)))
@@ -142,6 +144,8 @@ def render_markdown(
         device_name=device_name,
         backend_label=backend_label,
         generated_at=generated_at,
+        device_config_path=device_config_path,
+        golden_config_path=golden_config_path,
         grouped_findings=_group_by_severity(findings),
         severity_emoji=SEVERITY_EMOJI,
     )
@@ -156,6 +160,8 @@ def render_briefing_json(
     backend_label: str,
     output_path: str | Path,
     generated_at: str,
+    device_config_path: str = "",
+    golden_config_path: str = "",
 ) -> Path:
     """Write briefing.json: the findings list plus a suggested_device_vars_patch
     shaped exactly like device_vars.json ({control_id: {var: null, ...}}) built
@@ -170,6 +176,8 @@ def render_briefing_json(
         "device_name": device_name,
         "generated_at": generated_at,
         "backend_used": backend_label,
+        "device_config_path": device_config_path,
+        "golden_config_path": golden_config_path,
         "findings": [
             {
                 "control_id": f.control_id,

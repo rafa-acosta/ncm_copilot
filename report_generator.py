@@ -128,18 +128,36 @@ def render_fleet_html(
     return output_path
 
 
-def build_report_json(results: list[ControlResult], device_name: str = "") -> ComplianceReport:
+def build_report_json(
+    results: list[ControlResult],
+    device_name: str = "",
+    device_config_path: str = "",
+    golden_config_path: str = "",
+) -> ComplianceReport:
     """Build the pydantic-validated report structure consumed by the Remediation Advisor."""
     return ComplianceReport(
         device_name=device_name,
         generated_at=datetime.now(),
         results=[asdict(r) for r in results],
+        device_config_path=device_config_path,
+        golden_config_path=golden_config_path,
     )
 
 
-def render_json(results: list[ControlResult], output_path: Path, device_name: str = "") -> Path:
+def render_json(
+    results: list[ControlResult],
+    output_path: Path,
+    device_name: str = "",
+    device_config_path: str = "",
+    golden_config_path: str = "",
+) -> Path:
     """Write `results` as a ComplianceReport JSON document and return `output_path`."""
-    report = build_report_json(results, device_name=device_name)
+    report = build_report_json(
+        results,
+        device_name=device_name,
+        device_config_path=device_config_path,
+        golden_config_path=golden_config_path,
+    )
     output_path = Path(output_path)
     output_path.write_text(report.model_dump_json(indent=2), encoding="utf-8")
     return output_path
