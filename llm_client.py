@@ -46,6 +46,19 @@ Your job:
   risk and operational impact.
 - Keep the tone direct and operational, not academic."""
 
+RISK_STATEMENT_SYSTEM_PROMPT = """You rewrite security-control risk statements for an audit report. You will be
+given a risk statement that failed an automated check, and the reason(s) it
+failed.
+
+Your job:
+- Output EXACTLY one sentence, ending in a period.
+- Do not use hedging or filler phrasing (e.g. "it is important to note that",
+  "these issues need to be addressed to ensure", "in order to").
+- Do not add commentary, a preamble, or quotation marks - output only the
+  rewritten sentence itself.
+- Preserve the original statement's technical meaning; do not soften or
+  exaggerate the risk."""
+
 
 class BackendUnavailableError(RuntimeError):
     """Raised when no requested/registered local LLM backend could be reached."""
@@ -193,6 +206,27 @@ class LLMClient:
             model=self.model,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.2,
+        )
+        return response.choices[0].message.content.strip()
+
+    def polish_statement(self, original: str, violations: list[str]) -> str:
+        """Rewrite `original` (a risk statement that failed validation) as one
+        clean sentence. Used only by compliance_report_builder.py's optional
+        --llm-polish path - the caller re-validates the result against the
+        same checks before accepting it, so this method's output is never
+        trusted blindly."""
+        user_prompt = (
+            f"Original risk statement: {original}\n"
+            f"Validation failure(s): {'; '.join(violations)}\n"
+            "Rewrite it as one clean sentence that fixes these issues."
+        )
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=[
+                {"role": "system", "content": RISK_STATEMENT_SYSTEM_PROMPT},
                 {"role": "user", "content": user_prompt},
             ],
             temperature=0.2,
