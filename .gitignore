@@ -17,5 +17,14 @@ reports/
 # Generated golden configs
 output/
 
+# Generated remediation briefings
+briefing.md
+briefing.json
+
+# Local LLM binaries and model weights (multi-GB, fetched by
+# local-llm/install_llama_server.sh and local-llm/download_models.sh)
+local-llm/bin/
+local-llm/models/
+
 # OS
 .DS_Store

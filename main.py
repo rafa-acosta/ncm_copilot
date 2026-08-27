@@ -28,7 +28,7 @@ import click
 import yaml
 
 from compliance_engine import PRIORITY_CONTROL_IDS, ControlEvaluator, ControlResult
-from report_generator import render_fleet_html, render_html, render_pdf
+from report_generator import render_fleet_html, render_html, render_json, render_pdf
 
 
 def load_controls(path: Path) -> list[dict]:
@@ -67,6 +67,8 @@ def _evaluate_device(
         render_pdf(html_path, report_dir / "report.pdf")
         if "html" not in requested_formats:
             html_path.unlink(missing_ok=True)
+    if "json" in requested_formats:
+        render_json(results, report_dir / "report.json", device_name=device_config_path.stem)
     return results
 
 
@@ -98,7 +100,7 @@ def _evaluate_device(
 )
 @click.option(
     "--formats", default="html,pdf", show_default=True,
-    help="Comma-separated output formats to generate: html, pdf.",
+    help="Comma-separated output formats to generate: html, pdf, json.",
 )
 @click.option(
     "--priority-only", is_flag=True, default=False,
@@ -131,7 +133,7 @@ def main(
         controls = [c for c in controls if c["control_id"] in PRIORITY_CONTROL_IDS]
 
     requested_formats = {f.strip().lower() for f in formats.split(",") if f.strip()}
-    unknown = requested_formats - {"html", "pdf"}
+    unknown = requested_formats - {"html", "pdf", "json"}
     if unknown:
         raise click.BadParameter(f"Unsupported format(s): {', '.join(sorted(unknown))}", param_hint="--formats")
 
@@ -145,6 +147,8 @@ def main(
             click.echo(f"HTML report written to {output_dir / 'report.html'}")
         if "pdf" in requested_formats:
             click.echo(f"PDF report written to {output_dir / 'report.pdf'}")
+        if "json" in requested_formats:
+            click.echo(f"JSON report written to {output_dir / 'report.json'}")
 
         fail_count = sum(1 for r in results if r.status == "FAIL")
         click.echo(f"Evaluated {len(results)} controls: {fail_count} FAIL.")

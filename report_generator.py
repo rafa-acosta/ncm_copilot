@@ -1,7 +1,9 @@
-"""Builds HTML and PDF compliance reports from a list of ControlResult objects."""
+"""Builds HTML, PDF, and JSON compliance reports from a list of ControlResult objects."""
 
 from __future__ import annotations
 
+from dataclasses import asdict
+from datetime import datetime
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -13,6 +15,7 @@ from compliance_engine import (
     STATUS_PASS,
     ControlResult,
 )
+from report_schema import ComplianceReport
 
 TEMPLATE_DIR = Path(__file__).parent / "templates"
 TEMPLATE_NAME = "report_template.html"
@@ -122,6 +125,23 @@ def render_fleet_html(
     html = template.render(fleet=fleet, devices=devices, status_labels=STATUS_LABELS)
     output_path = Path(output_path)
     output_path.write_text(html, encoding="utf-8")
+    return output_path
+
+
+def build_report_json(results: list[ControlResult], device_name: str = "") -> ComplianceReport:
+    """Build the pydantic-validated report structure consumed by the Remediation Advisor."""
+    return ComplianceReport(
+        device_name=device_name,
+        generated_at=datetime.now(),
+        results=[asdict(r) for r in results],
+    )
+
+
+def render_json(results: list[ControlResult], output_path: Path, device_name: str = "") -> Path:
+    """Write `results` as a ComplianceReport JSON document and return `output_path`."""
+    report = build_report_json(results, device_name=device_name)
+    output_path = Path(output_path)
+    output_path.write_text(report.model_dump_json(indent=2), encoding="utf-8")
     return output_path
 
 

@@ -1,0 +1,24 @@
+# Compliance Remediation Briefing — {{ device_name }}
+Generated: {{ generated_at }} | Backend used: {{ backend_label }}
+{% if not grouped_findings %}
+No FAILED controls at or above the requested severity threshold. Nothing to remediate.
+{% endif %}
+{% for severity, findings in grouped_findings %}
+## {{ severity_emoji[severity] }} {{ severity|upper }} severity ({{ findings|length }} finding{{ 's' if findings|length != 1 else '' }})
+{% for f in findings %}
+### {{ f.control_id }} — {{ f.title }}
+**What's missing:** {{ f.explanation }}
+
+**Next step — apply:**
+
+```
+{{ f.command_block }}
+```
+
+**Remediation guidance:** {{ f.remediation_recommendation }}
+{% if f.still_needed_variables %}
+**Still needed from operator:** {% for v in f.still_needed_variables %}`<{{ v }}>`{{ ", " if not loop.last else "" }}{% endfor %}
+{% endif %}
+---
+{% endfor %}
+{% endfor %}

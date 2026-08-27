@@ -1,0 +1,18 @@
+# Local LLM backend registry consumed directly by llm_client.load_backends_registry()
+# / select_backend() at the repo root. Add or edit entries here to change what
+# `vibecoding_advise.py --backend <name>` / `--backend auto` can see - no code
+# changes needed for a new backend, just a new entry below.
+backends:
+  qwen_coder:
+    role: specialist
+    base_url: http://127.0.0.1:8080/v1
+    model_name: qwen2.5-coder-7b-instruct-q4_k_m
+  phi4_mini:
+    role: fast_default
+    base_url: http://127.0.0.1:8081/v1
+    model_name: phi-4-mini-instruct-q4_k_m
+notes: >
+  Only one backend is expected to be running at a time on 6GB VRAM hardware
+  (see README.md). The CRA tool's --backend auto logic pings both base_urls
+  and uses whichever responds; an explicit --backend <name> flag can target
+  either one directly.
