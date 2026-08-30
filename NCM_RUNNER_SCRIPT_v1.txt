@@ -1,0 +1,6 @@
+python main.py \
+  --device-config samples/device_config.txt \
+  --golden-config samples/golden_config.txt \
+  --controls controls.yaml \
+  --output-dir ./reports \
+  --formats html,pdf

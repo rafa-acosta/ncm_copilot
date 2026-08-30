@@ -1,12 +1,12 @@
 """CLI entrypoint for the Compliance Remediation Advisor (CRA).
 
-Run as `python vibecoding_advise.py ...` - this repo has no packaging/console-
+Run as `python agent_assisted_coding_advise.py ...` - this repo has no packaging/console-
 script infrastructure yet (same naming pattern as golden_config_main.py,
 which exists for the same reason: `main.py` is already the Compliance
 Checker's entrypoint).
 
 Usage:
-    python vibecoding_advise.py \\
+    python agent_assisted_coding_advise.py \\
         --report path/to/compliance_report.json \\
         --controls controls.yaml \\
         --backend auto \\

@@ -1,6 +1,6 @@
 # Local LLM backend registry consumed directly by llm_client.load_backends_registry()
 # / select_backend() at the repo root. Add or edit entries here to change what
-# `vibecoding_advise.py --backend <name>` / `--backend auto` can see - no code
+# `agent_assisted_coding_advise.py --backend <name>` / `--backend auto` can see - no code
 # changes needed for a new backend, just a new entry below.
 backends:
   qwen_coder:

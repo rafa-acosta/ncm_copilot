@@ -1,6 +1,6 @@
 # Running the App
 
-This project (VibeCoding) is four separate command-line tools that share one file, `controls.yaml`, as their single source of truth. This guide covers installing them and every way to invoke each one. For what each file/folder is and how the tools relate, see [`PROJECT_STRUCTURE.md`](PROJECT_STRUCTURE.md). For what each Python function actually does internally, see [`FUNCTION_REFERENCE.md`](FUNCTION_REFERENCE.md).
+This project (Agent-Assisted Coding) is four separate command-line tools that share one file, `controls.yaml`, as their single source of truth. This guide covers installing them and every way to invoke each one. For what each file/folder is and how the tools relate, see [`PROJECT_STRUCTURE.md`](PROJECT_STRUCTURE.md). For what each Python function actually does internally, see [`FUNCTION_REFERENCE.md`](FUNCTION_REFERENCE.md).
 
 ## Prerequisites
 
@@ -79,7 +79,7 @@ python main.py \
   --output-dir ./reports \
   --formats json
 ```
-**Output:** `reports/report.json` — a `ComplianceReport` (see `report_schema.py`), including `device_config_path` and `golden_config_path` recording exactly which two files were compared. This is the input `vibecoding_advise.py --report` expects.
+**Output:** `reports/report.json` — a `ComplianceReport` (see `report_schema.py`), including `device_config_path` and `golden_config_path` recording exactly which two files were compared. This is the input `agent_assisted_coding_advise.py --report` expects.
 
 ### Scenario: batch mode (a folder of devices)
 
@@ -173,7 +173,7 @@ Note this only checks *shape/type*, not completeness — a whole control section
 | `<MISSING:some_var>` in the output | A control section is present but that specific variable isn't. |
 | Aborts with no file written | `--strict` and something's missing — see above. |
 
-## 4. Tool 3 — Compliance Remediation Advisor (`vibecoding_advise.py`)
+## 4. Tool 3 — Compliance Remediation Advisor (`agent_assisted_coding_advise.py`)
 
 Turns a Compliance Checker JSON report into an LLM-written remediation briefing. Requires a local LLM backend to be running (§6). See [`FUNCTION_REFERENCE.md#remediation_advisorpy`](FUNCTION_REFERENCE.md#remediation_advisorpy).
 
@@ -197,7 +197,7 @@ Turns a Compliance Checker JSON report into an LLM-written remediation briefing.
 python main.py --device-config samples/device_config.txt --golden-config samples/golden_config.txt \
   --controls controls.yaml --output-dir ./reports --formats json
 
-python vibecoding_advise.py \
+python agent_assisted_coding_advise.py \
   --report reports/report.json \
   --controls controls.yaml \
   --backend auto \
@@ -209,7 +209,7 @@ python vibecoding_advise.py \
 ### Scenario: only brief High-severity findings, skip variables already known
 
 ```bash
-python vibecoding_advise.py --report reports/report.json --controls controls.yaml \
+python agent_assisted_coding_advise.py --report reports/report.json --controls controls.yaml \
   --severity-min high --device-vars device_vars.json \
   --output-md briefing_high.md --output-json briefing_high.json
 ```
@@ -228,11 +228,11 @@ The LLM only ever writes the 2–3 sentence "what's missing and why" explanation
 
 ## 5. Batch reports and the LLM advisor
 
-The Remediation Advisor currently reads **one** device's `report.json` at a time — `main.py`'s batch mode produces a `report.json` per device (no combined multi-device JSON yet; only the HTML `fleet_report.html` is a true fleet-level artifact today). To brief multiple devices, run `vibecoding_advise.py` once per device's `report.json`.
+The Remediation Advisor currently reads **one** device's `report.json` at a time — `main.py`'s batch mode produces a `report.json` per device (no combined multi-device JSON yet; only the HTML `fleet_report.html` is a true fleet-level artifact today). To brief multiple devices, run `agent_assisted_coding_advise.py` once per device's `report.json`.
 
 ## 6. Local LLM backend (`local-llm/`)
 
-Provisions and runs the model `vibecoding_advise.py` talks to. See `local-llm/README.md` and `LOCAL_LLM_SETUP_PROMPT.md` for the full rationale (why llama.cpp, why Vulkan not CUDA on Linux, the 6GB-VRAM "one model at a time" constraint).
+Provisions and runs the model `agent_assisted_coding_advise.py` talks to. See `local-llm/README.md` and `LOCAL_LLM_SETUP_PROMPT.md` for the full rationale (why llama.cpp, why Vulkan not CUDA on Linux, the 6GB-VRAM "one model at a time" constraint).
 
 ```bash
 cd local-llm
@@ -259,7 +259,8 @@ python local-llm/healthcheck.py     # confirms which backend(s) are UP/DOWN; exi
 | `LLAMA_MODEL_FILE` | Use a different GGUF (e.g. the smaller `Q3_K_M` quant if VRAM is tight). |
 | `LLAMA_CTX_SIZE` | Reduce context (default 4096) — e.g. `LLAMA_CTX_SIZE=2048`. |
 | `LLAMA_NGL` | Reduce GPU layer offload (default 99 = full) — e.g. `LLAMA_NGL=20` for partial CPU/GPU split. |
-| `VIBECODING_LLM_CONFIG` | Point `llm_client.py` at an alternate backend-registry YAML instead of `local-llm/config.yaml`. |
+| `LLAMA_READY_TIMEOUT` | Seconds to wait for the server to report ready before warning (default 180) — raise this if a cold disk cache makes the larger model take longer than that to load. |
+| `AGENT_ASSISTED_CODING_LLM_CONFIG` | Point `llm_client.py` at an alternate backend-registry YAML instead of `local-llm/config.yaml`. |
 
 ### Common errors
 

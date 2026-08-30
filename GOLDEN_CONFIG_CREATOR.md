@@ -6,7 +6,7 @@
 
 Build a Python CLI tool that **generates `golden_config.txt`** — a fully rendered, hardened Cisco IOS-XE configuration — by combining:
 
-1. The **controls definition file** (`controls.yaml`, derived from `prompt_vibecoding.md`) — which defines the `command_template` and `variables` for each of the 18 controls.
+1. The **controls definition file** (`controls.yaml`, derived from `prompt_agent_assisted_coding.md`) — which defines the `command_template` and `variables` for each of the 18 controls.
 2. A **device variables file** (`device_vars.json`) — which supplies the actual values for every variable referenced across the controls (hostname, domain, TACACS servers, SNMP users, NTP servers, VTY ACL name, etc.).
 
 The output, `golden_config.txt`, becomes the baseline reference consumed by the separate **Compliance Checker** tool (see `CLAUDE.md`).

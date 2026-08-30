@@ -4,7 +4,7 @@
 
 ## 1. Project Goal
 
-Build a Python-based CLI tool that audits a Cisco IOS-XE device configuration against a **golden config** baseline, using a **controls definition file** (`prompt_vibecoding.md` / structured YAML/JSON equivalent) to know which commands to check and how to evaluate them. The tool outputs a **pass/fail compliance report** in **HTML and PDF**.
+Build a Python-based CLI tool that audits a Cisco IOS-XE device configuration against a **golden config** baseline, using a **controls definition file** (`prompt_agent_assisted_coding.md` / structured YAML/JSON equivalent) to know which commands to check and how to evaluate them. The tool outputs a **pass/fail compliance report** in **HTML and PDF**.
 
 ## 2. Inputs
 
@@ -12,7 +12,7 @@ Build a Python-based CLI tool that audits a Cisco IOS-XE device configuration ag
 |---|---|---|
 | `device_config.txt` | The running-config of the device under audit | Plain text (Cisco IOS-XE `show running-config` output) |
 | `golden_config.txt` | The reference/approved configuration defining correct values | Plain text, uses `<PLACEHOLDER>` syntax and `!` comments |
-| `controls.yaml` (or `.json`) | Structured version of the 18 controls (see §3) | YAML/JSON — to be generated from the existing `prompt_vibecoding.md` doc |
+| `controls.yaml` (or `.json`) | Structured version of the 18 controls (see §3) | YAML/JSON — to be generated from the existing `prompt_agent_assisted_coding.md` doc |
 
 ## 3. Controls Schema
 
@@ -41,7 +41,7 @@ config_example: |
   hostname ACME_CR_RT_INT_BLN_01
 ```
 
-**Task 1:** Convert the 18 controls in `prompt_vibecoding.md` (Google Doc export) into this YAML/JSON schema — one file, `controls.yaml`, checked into the repo. This becomes the single source of truth the compliance engine reads.
+**Task 1:** Convert the 18 controls in `prompt_agent_assisted_coding.md` (Google Doc export) into this YAML/JSON schema — one file, `controls.yaml`, checked into the repo. This becomes the single source of truth the compliance engine reads.
 
 ## 4. Core Comparison Logic
 
@@ -123,7 +123,7 @@ cisco-compliance-checker/
 
 ## 9. Acceptance Criteria
 
-- [ ] `controls.yaml` contains all 18 controls in the schema from §3, sourced accurately from `prompt_vibecoding.md`
+- [ ] `controls.yaml` contains all 18 controls in the schema from §3, sourced accurately from `prompt_agent_assisted_coding.md`
 - [ ] Tool correctly flags known audit findings from the reference lab environment as **FAIL**, including: TACACS+ key using Type 7 encoding, permissive VTY ACL active instead of restrictive ACL, SNMPv2c community coexisting with SNMPv3, inconsistent local-account password hashing types, conflicting/unauthenticated NTP blocks, missing CoPP policy on control-plane
 - [ ] HTML report renders correctly in a browser with color-coded severity and expandable evidence per control
 - [ ] PDF report matches HTML content and is generated without a headless browser dependency

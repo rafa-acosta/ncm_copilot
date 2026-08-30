@@ -3,7 +3,7 @@
 Run as `python compliance_report_main.py ...` - not `main.py` (already Tool
 1's entrypoint) and not a packaged `compliance-report` console script (this
 repo has no packaging infrastructure - same reasoning as
-golden_config_main.py/vibecoding_advise.py).
+golden_config_main.py/agent_assisted_coding_advise.py).
 
 Turns Tool 1's report.json into an audit-grade Markdown + PDF report. Does
 NOT re-analyze the device config - see compliance_report_builder.py.

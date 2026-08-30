@@ -21,6 +21,10 @@ output/
 briefing.md
 briefing.json
 
+# Generated compliance reports (compliance_report_main.py default output)
+/report.md
+/report.pdf
+
 # Local LLM binaries and model weights (multi-GB, fetched by
 # local-llm/install_llama_server.sh and local-llm/download_models.sh)
 local-llm/bin/

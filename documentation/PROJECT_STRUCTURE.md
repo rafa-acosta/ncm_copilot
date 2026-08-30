@@ -22,7 +22,7 @@ ncm_copilot/
 ├── schemas/
 │   └── device_vars.schema.json      # JSON Schema validating device_vars.json's shape (Tool 2)
 │
-├── vibecoding_advise.py             # Tool 3 entrypoint: Compliance Remediation Advisor CLI
+├── agent_assisted_coding_advise.py             # Tool 3 entrypoint: Compliance Remediation Advisor CLI
 ├── remediation_advisor.py           # Tool 3: report parsing, finding assembly, briefing rendering
 ├── llm_client.py                    # Tool 3: LLMClient + named-backend registry/selection logic
 │

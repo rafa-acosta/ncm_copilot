@@ -13,7 +13,7 @@ Every function and class method in the codebase, excluding trivial `__init__`/du
 - [golden_config_main.py](#golden_config_mainpy) — Tool 2 CLI
 - [llm_client.py](#llm_clientpy) — Tool 3 backend client
 - [remediation_advisor.py](#remediation_advisorpy) — Tool 3 core logic
-- [vibecoding_advise.py](#vibecoding_advisepy) — Tool 3 CLI
+- [agent_assisted_coding_advise.py](#agent_assisted_coding_advisepy) — Tool 3 CLI
 - [local-llm/healthcheck.py](#local-llmhealthcheckpy) — Tool 4 health check
 
 ---
@@ -132,7 +132,7 @@ Tool 3's pluggable local-LLM client. See `ARCHITECTURE_OVERVIEW.md` for why this
 | Function/Method | Inputs | Output | Side effects |
 |---|---|---|---|
 | `class BackendUnavailableError(RuntimeError)` | — | — | Raised when no requested/registered backend could be reached. |
-| `_config_path(config_path=None)` | Optional explicit path. | A `Path`: the explicit path if given, else `$VIBECODING_LLM_CONFIG` if set, else `<repo_root>/local-llm/config.yaml`. | None. |
+| `_config_path(config_path=None)` | Optional explicit path. | A `Path`: the explicit path if given, else `$AGENT_ASSISTED_CODING_LLM_CONFIG` if set, else `<repo_root>/local-llm/config.yaml`. | None. |
 | `load_backends_registry(config_path=None)` | Optional path override. | `dict[str, dict]` — the `backends:` map from the config file, or `{}` if the file doesn't exist yet. | Reads the file if it exists. |
 | `_is_reachable(base_url, timeout=2.0)` | A base URL. | `bool`. | Makes a real `GET <base_url>/models` HTTP request (via `httpx`). Module-level (not a method) specifically so tests can monkeypatch it directly instead of mocking HTTP. |
 | `_launch_hint(name)` | A backend name. | A string: `local-llm/serve_<name>.sh` if that file exists, else `local-llm/serve_<name-with-underscores-stripped>.sh` if *that* exists (handles the `phi4_mini` config-key vs. `serve_phi4mini.sh` filename mismatch - both spellings come from the same spec and don't agree with each other), else `"see local-llm/README.md"`. | Checks the filesystem. |
@@ -162,7 +162,7 @@ Tool 3's core logic: turns a `ComplianceReport` + `controls.yaml` + an `LLMClien
 
 ---
 
-## `vibecoding_advise.py`
+## `agent_assisted_coding_advise.py`
 
 | Function | Inputs | Output | Side effects |
 |---|---|---|---|

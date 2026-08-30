@@ -3,7 +3,7 @@
 
 Exit code: 0 if at least one backend is reachable, 1 otherwise - mirrors the
 condition llm_client.select_backend's BackendUnavailableError raises on, so
-this can be used as a pre-flight check before running vibecoding_advise.py.
+this can be used as a pre-flight check before running agent_assisted_coding_advise.py.
 """
 
 from __future__ import annotations

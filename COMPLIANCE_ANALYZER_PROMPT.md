@@ -1,6 +1,6 @@
-VibeCoding — Compliance Remediation Advisor (LLM-powered) — Claude Code Build Prompt
+Agent-Assisted Coding — Compliance Remediation Advisor (LLM-powered) — Claude Code Build Prompt
 Context
-This is the third component of the VibeCoding project, alongside the existing:
+This is the third component of the Agent-Assisted Coding project, alongside the existing:
 ·	controls.yaml — single source of truth for the 18 security controls (control_00001–control_00018)
 ·	Compliance Checker — validates a device's running-config against controls.yaml and produces a compliance report
 ·	Golden Config Creator — renders a full IOS-XE config from device_vars.json + controls.yaml via Jinja2
@@ -8,7 +8,7 @@ This new component, the Compliance Remediation Advisor (CRA), consumes the Compl
 controls.yaml remains the single source of truth. The LLM does not invent remediation steps from scratch — it receives the relevant control's remediation_recommendation, configuration_example, risk, and severity fields as grounding context, and its job is to synthesize and explain, in the tone of a senior Cisco network security engineer, not to hallucinate new commands.
 
 Goal
-Build a CLI tool, vibecoding-advise, that:
+Build a CLI tool, agent-assisted-coding-advise, that:
 1.	Reads a Compliance Checker report (JSON) identifying which controls PASSED / FAILED / NOT-APPLICABLE for a given device.
 2.	For each FAILED control, pulls the corresponding control block from controls.yaml (risk, severity, remediation_recommendation, configuration_example, variables).
 3.	Sends this grounded context to a local LLM (Phi-3-mini or similar small specialized model) with a system prompt establishing it as a Cisco IOS-XE security hardening expert.
@@ -27,7 +27,7 @@ llama.cpp server (llama-server)	Default for single-device, single-operator, lapt
 Manual override	--backend vllm / --backend llamacpp / --backend auto flag	N/A
 
 Backend selection logic
-·	--backend auto (default): the tool pings both endpoints (configurable URLs via config.yaml or env vars VIBECODING_VLLM_URL / VIBECODING_LLAMACPP_URL) and picks the first one that responds to /v1/models. Log which one was selected.
+·	--backend auto (default): the tool pings both endpoints (configurable URLs via config.yaml or env vars AGENT_ASSISTED_CODING_VLLM_URL / AGENT_ASSISTED_CODING_LLAMACPP_URL) and picks the first one that responds to /v1/models. Log which one was selected.
 ·	If both are reachable, prefer vLLM when the report contains more than one device (batch mode — vLLM's continuous batching wins here); prefer llama.cpp for a single-device report (lower latency for one-shot queries, no batching overhead).
 ·	If neither is reachable, fail with a clear error telling the operator to start one of the two servers, and print the exact launch command for both as a hint:
 ·	# vLLM
@@ -60,7 +60,7 @@ Your job:
 
 
 CLI Interface
-vibecoding-advise --report path/to/compliance_report.json \
+agent-assisted-coding-advise --report path/to/compliance_report.json \
                    --controls controls.yaml \
                    --backend auto \
                    --output-md briefing.md \
@@ -119,7 +119,7 @@ Acceptance Criteria
 - The Compliance Checker (`main.py`) didn't emit JSON at all before this component existed — `report_schema.py` (pydantic `ComplianceReport`/`ControlReportEntry`) and `report_generator.render_json`/`build_report_json` were added, plus a `--formats json` option on `main.py`, to give the CRA something to actually consume.
 - Field names: this prompt's illustrative `remediation_recommendation`/`configuration_example` don't match `controls.yaml`'s real fields (`remediation`/`config_example` — see `CLAUDE.md`). The real field names are used throughout; `controls.yaml` stays the single source of truth.
 - **Command-sourcing guarantee, strengthened beyond this prompt's literal design**: rather than having the LLM "restate the exact commands" (a probabilistic guarantee, verified after the fact), the LLM is never shown the command block at all — it only receives risk/severity/finding context and writes the explanation prose. `remediation_advisor.py` inserts `controls.yaml`'s `config_example` verbatim itself. This makes acceptance criterion 3 true by construction rather than by trusting the model complied — decided with the user before implementation.
-- The entrypoint is `vibecoding_advise.py` (run as `python vibecoding_advise.py ...`), not a packaged `vibecoding-advise` console script — this repo has no packaging/console-script infrastructure (same reasoning as `golden_config_main.py` for the Golden Config Creator).
+- The entrypoint is `agent_assisted_coding_advise.py` (run as `python agent_assisted_coding_advise.py ...`), not a packaged `agent-assisted-coding-advise` console script — this repo has no packaging/console-script infrastructure (same reasoning as `golden_config_main.py` for the Golden Config Creator).
 - `briefing.json` includes a `suggested_device_vars_patch: {control_id: {var: null, ...}}` block shaped exactly like `device_vars.json`, concretely realizing acceptance criterion 5.
 - Backend selection was originally a hardcoded vLLM-vs-llama.cpp binary choice matching this prompt literally. It was later generalized into a named-backend registry (`--backend auto|<name>`, loaded from `local-llm/config.yaml`) once real hardware constraints (6GB VRAM, two different *models* rather than two different *engines* needed) made the binary choice the wrong shape — see `LOCAL_LLM_SETUP_PROMPT.md`.
 - See `LOCAL_LLM_SETUP_PROMPT.md` for how the actual local backend(s) this tool talks to are provisioned and run.

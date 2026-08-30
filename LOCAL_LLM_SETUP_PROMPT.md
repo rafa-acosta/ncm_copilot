@@ -1,4 +1,4 @@
-# VibeCoding — Local LLM Setup (Phi-4-mini + Qwen2.5-Coder-7B) — Claude Code Build Prompt
+# Agent-Assisted Coding — Local LLM Setup (Phi-4-mini + Qwen2.5-Coder-7B) — Claude Code Build Prompt
 
 ## Context
 
@@ -17,7 +17,7 @@ Both must run via `llama-server` (OpenAI-compatible endpoint), selectable throug
 
 ## Goal
 
-Produce scripts and config (not one-off manual commands) under a new `local-llm/` directory in the VibeCoding project:
+Produce scripts and config (not one-off manual commands) under a new `local-llm/` directory in the Agent-Assisted Coding project:
 
 1. `local-llm/download_models.sh` — downloads both models from Hugging Face in GGUF format (prefer pre-quantized GGUF repos if available and trustworthy — e.g. community GGUF conversions — to avoid a manual conversion step; fall back to `llama.cpp`'s `convert_hf_to_gguf.py` + `llama-quantize` if a pre-quantized Q4_K_M isn't available).
 2. `local-llm/serve_phi4mini.sh` — launches `llama-server` for Phi-4-mini-instruct.
@@ -96,13 +96,13 @@ notes: >
 1. `download_models.sh` fetches both models without requiring manual Hugging Face UI interaction (uses `huggingface-cli download` or equivalent); checksums or file-size sanity checks included to catch failed/partial downloads.
 2. Both `serve_*.sh` scripts start cleanly on a fresh RTX 4050 (6GB) laptop with correct `-ngl`/context defaults, and print a clear log line confirming GPU offload succeeded (not silently falling back to CPU).
 3. `healthcheck.py` correctly reports up/down status for both endpoints and exits with a non-zero code if neither is reachable, mirroring the error behavior specified in `COMPLIANCE_ANALYZER_PROMPT.md`.
-4. `config.yaml` is directly consumable by the CRA tool's backend-selection code — no format mismatch between this file and what `vibecoding-advise` expects.
+4. `config.yaml` is directly consumable by the CRA tool's backend-selection code — no format mismatch between this file and what `agent-assisted-coding-advise` expects.
 5. README explicitly documents the "one model at a time" VRAM constraint and gives the exact fallback steps (reduce quant, reduce context, reduce `-ngl`) if a load fails with an out-of-memory error.
-6. No hardcoded absolute paths — scripts work relative to the `local-llm/` directory regardless of where the VibeCoding project is cloned.
+6. No hardcoded absolute paths — scripts work relative to the `local-llm/` directory regardless of where the Agent-Assisted Coding project is cloned.
 
 ## Implementation Notes (this build)
 
-- **Backend selection was generalized**, not kept as the literal vLLM-vs-llama.cpp binary choice from `COMPLIANCE_ANALYZER_PROMPT.md`: `llm_client.py`'s `select_backend`/`LLMClient`/`vibecoding_advise.py --backend` now work off a named registry loaded from this directory's `config.yaml` (`qwen_coder`, `phi4_mini`, or any future entry), not a fixed `vllm`/`llamacpp` engine-type enum. Decided with the user before implementation, since two *models* on one *engine* is what this hardware actually needs, not two *engines*. The repo-root `config.yaml` (flat `vllm_url`/`llamacpp_url`) from the CRA build is retired; `local-llm/config.yaml` is now the single source of truth the CRA reads.
+- **Backend selection was generalized**, not kept as the literal vLLM-vs-llama.cpp binary choice from `COMPLIANCE_ANALYZER_PROMPT.md`: `llm_client.py`'s `select_backend`/`LLMClient`/`agent_assisted_coding_advise.py --backend` now work off a named registry loaded from this directory's `config.yaml` (`qwen_coder`, `phi4_mini`, or any future entry), not a fixed `vllm`/`llamacpp` engine-type enum. Decided with the user before implementation, since two *models* on one *engine* is what this hardware actually needs, not two *engines*. The repo-root `config.yaml` (flat `vllm_url`/`llamacpp_url`) from the CRA build is retired; `local-llm/config.yaml` is now the single source of truth the CRA reads.
 - **`install_llama_server.sh` was added**, beyond this prompt's literal file list: nothing here provides the `llama-server` binary itself, and this machine has no compiler (no gcc/cmake/make) to build it from source.
 - **The no-compile GPU path on Linux is Vulkan, not CUDA**: llama.cpp's official GitHub releases (`ggml-org/llama.cpp`) only ship a prebuilt CUDA binary for Windows — Linux's no-compile GPU option is the `*-bin-ubuntu-vulkan-x64.tar.gz` release asset. This machine already has a working NVIDIA Vulkan ICD installed (confirmed via `/usr/share/vulkan/icd.d/nvidia_icd.json`, `libvulkan1`, `libnvidia-gl-595`), so `-ngl` GPU-layer offload works the same way through Vulkan as it would through CUDA, with no additional driver/toolkit install needed.
 - **Model sources, verified live against Hugging Face (metadata only, no weights fetched) before writing `download_models.sh`**:

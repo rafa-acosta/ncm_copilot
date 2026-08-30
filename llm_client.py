@@ -67,7 +67,7 @@ class BackendUnavailableError(RuntimeError):
 def _config_path(config_path: str | Path | None = None) -> Path:
     if config_path is not None:
         return Path(config_path)
-    env_override = os.environ.get("VIBECODING_LLM_CONFIG")
+    env_override = os.environ.get("AGENT_ASSISTED_CODING_LLM_CONFIG")
     if env_override:
         return Path(env_override)
     return _DEFAULT_CONFIG_PATH

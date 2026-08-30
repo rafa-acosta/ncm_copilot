@@ -1,4 +1,4 @@
-"""Unit + CLI tests for remediation_advisor.py and vibecoding_advise.py.
+"""Unit + CLI tests for remediation_advisor.py and agent_assisted_coding_advise.py.
 
 No real LLM server is used anywhere here: LLMClient is always constructed with
 a fake injected `client` object (see tests/test_llm_client.py's _FakeOpenAIClient
@@ -14,7 +14,7 @@ from types import SimpleNamespace
 from click.testing import CliRunner
 
 import remediation_advisor as ra
-import vibecoding_advise
+import agent_assisted_coding_advise
 from llm_client import LLMClient
 from report_schema import ComplianceReport
 
@@ -237,14 +237,14 @@ def test_cli_produces_briefing_with_fake_backend(tmp_path, monkeypatch):
     report_path = tmp_path / "report.json"
     report_path.write_text(report.model_dump_json(), encoding="utf-8")
 
-    monkeypatch.setattr(vibecoding_advise, "select_backend", lambda *a, **k: ("llamacpp", "http://fake/v1", "phi-3-mini-4k-instruct"))
-    monkeypatch.setattr(vibecoding_advise, "LLMClient", lambda *a, **k: _fake_llm_client())
+    monkeypatch.setattr(agent_assisted_coding_advise, "select_backend", lambda *a, **k: ("llamacpp", "http://fake/v1", "phi-3-mini-4k-instruct"))
+    monkeypatch.setattr(agent_assisted_coding_advise, "LLMClient", lambda *a, **k: _fake_llm_client())
 
     md_path = tmp_path / "briefing.md"
     json_path = tmp_path / "briefing.json"
     runner = CliRunner()
     result = runner.invoke(
-        vibecoding_advise.main,
+        agent_assisted_coding_advise.main,
         [
             "--report", str(report_path),
             "--controls", str(CONTROLS_PATH),

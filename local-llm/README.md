@@ -1,6 +1,6 @@
 # Local LLM Setup
 
-Local model backend for the Compliance Remediation Advisor (`vibecoding_advise.py` /
+Local model backend for the Compliance Remediation Advisor (`agent_assisted_coding_advise.py` /
 `COMPLIANCE_ANALYZER_PROMPT.md`). Two models, both served via `llama.cpp`, on two ports.
 See `LOCAL_LLM_SETUP_PROMPT.md` for the original spec and design rationale.
 
@@ -26,7 +26,7 @@ fetches this build; `-ngl` (GPU layer offload) works identically through it.
 
 **Do not run both at once.** Combined (~7GB) exceeds 6GB even before OS/display overhead.
 `serve_qwen_coder.sh` and `serve_phi4mini.sh` each start exactly one server; nothing here
-starts both by default. `vibecoding_advise.py --backend auto` already handles this
+starts both by default. `agent_assisted_coding_advise.py --backend auto` already handles this
 gracefully — it pings every backend in `config.yaml` and uses whichever one is actually
 running.
 
@@ -45,7 +45,7 @@ In another terminal, once a server is up:
 ```bash
 python healthcheck.py                                    # confirm it's reachable
 cd ..
-python vibecoding_advise.py --report reports/report.json --controls controls.yaml \
+python agent_assisted_coding_advise.py --report reports/report.json --controls controls.yaml \
     --backend auto --output-md briefing.md --output-json briefing.json
 ```
 
@@ -55,7 +55,7 @@ target one directly with `--backend qwen_coder` / `--backend phi4_mini`.
 
 ## If a model fails to load (out-of-memory)
 
-Each `serve_*.sh` script honors three environment variables, so none of this needs
+Each `serve_*.sh` script honors these environment variables, so none of this needs
 editing the scripts:
 
 ```bash
@@ -70,6 +70,10 @@ LLAMA_MODEL_FILE=./models/qwen2.5-coder-7b-instruct-q3_k_m.gguf ./serve_qwen_cod
 
 # 3. Partial GPU offload as a last resort (slower - some layers run on CPU/RAM)
 LLAMA_NGL=20 ./serve_qwen_coder.sh
+
+# If a cold disk cache makes the "not confirmed ready" warning fire even
+# though the server comes up fine moments later, give it more time (default 180s):
+LLAMA_READY_TIMEOUT=300 ./serve_qwen_coder.sh
 ```
 
 Combine as needed, e.g. `LLAMA_CTX_SIZE=2048 LLAMA_NGL=20 ./serve_qwen_coder.sh`.

@@ -1,8 +1,8 @@
-# PROJECT_PROMPT: Compliance Report Generator (VibeCoding)
+# PROJECT_PROMPT: Compliance Report Generator (Agent-Assisted Coding)
 
 ## Context
 
-This tool is part of **VibeCoding**, a Cisco IOS-XE security hardening framework built around 18 controls defined in `controls.yaml` (the single source of truth, shared with the Compliance Checker and Golden Config Creator).
+This tool is part of **Agent-Assisted Coding**, a Cisco IOS-XE security hardening framework built around 18 controls defined in `controls.yaml` (the single source of truth, shared with the Compliance Checker and Golden Config Creator).
 
 The Compliance Checker already produces a raw findings analysis (currently via an LLM backend, e.g. `phi4_mini`). That raw output is narratively inconsistent and not audit-ready. **This tool's job is NOT to re-analyze the device config.** Its job is to take the Compliance Checker's structured findings and render them into a professional, audit-grade compliance report (Markdown + PDF via WeasyPrint), following the standards below.
 
@@ -33,7 +33,7 @@ Do not let any LLM step control document structure, field order, severity colors
 
 1. **Cover / version control block** — document title, device hostname, audit date, `controls.yaml` version, classification banner ("Confidential — Internal Use"), generating tool + version
 2. **Executive summary** — compliance score and severity breakdown (see 2.2)
-3. **Scope & methodology** — frameworks referenced (CIS Cisco IOS-XE Benchmark, Cisco Hardening Guide, VibeCoding 3-plane model), what was evaluated, what was explicitly out of scope
+3. **Scope & methodology** — frameworks referenced (CIS Cisco IOS-XE Benchmark, Cisco Hardening Guide, Agent-Assisted Coding 3-plane model), what was evaluated, what was explicitly out of scope
 4. **Findings detail** — one entry per non-compliant control, using the fixed schema in 2.3, grouped by severity (High → Medium → Low)
 5. **Full control appendix** — table of **all 18 controls**, including passed/compliant and not-applicable ones, not just failures
 6. **Remediation roadmap** — findings sorted by severity with SLA dates (2.5)
@@ -59,7 +59,7 @@ Compute this from `findings.json` — never let an LLM estimate or phrase this b
 ```
 ### [control_XXXXX] <Control Title> — <SEVERITY>
 Status: NON-COMPLIANT
-Reference: CIS Cisco IOS-XE Benchmark §<ref> | VibeCoding controls.yaml v<version>
+Reference: CIS Cisco IOS-XE Benchmark §<ref> | Agent-Assisted Coding controls.yaml v<version>
 
 Risk Statement: <one sentence, no filler, no "this needs to be addressed before...">
 Evidence: <verbatim config line(s) or show-command output that triggered the finding>
@@ -98,7 +98,7 @@ Compute `Target Remediation Date` = audit date + SLA, don't leave it as a free-t
 - A compliance donut/bar chart (% compliant) — generate as inline SVG or via a lightweight charting step feeding into WeasyPrint, not a hand-drawn placeholder
 - Consistent severity iconography across the whole document: 🔴 High, 🟡 Medium, 🟢 Low, ✅ Compliant, ⚪ Not Applicable — never introduce a new icon set mid-document
 
-## 3. Architecture / tech stack (consistent with existing VibeCoding tools)
+## 3. Architecture / tech stack (consistent with existing Agent-Assisted Coding tools)
 
 - **Input parsing**: read `controls.yaml` + `findings.json`, validate schema with `pydantic` before rendering (fail fast on missing fields — do not attempt to render a partial report)
 - **Templating**: Jinja2 template(s) implementing the exact structure in Section 2 — structure, field order, and icon/severity mapping live in the template, not in prompt text to an LLM
@@ -123,12 +123,12 @@ Compute `Target Remediation Date` = audit date + SLA, don't leave it as a free-t
 
 ## 6. Implementation Notes (this build)
 
-- **The spec's premise about where findings come from doesn't match this codebase.** It says the Compliance Checker's raw output already comes "via an LLM backend" — but `main.py`/`compliance_engine.py` (the actual Compliance Checker) is fully deterministic; no LLM is involved anywhere in producing its `report.json`. The LLM only appears in `vibecoding_advise.py` (the separate Compliance Remediation Advisor, see `COMPLIANCE_ANALYZER_PROMPT.md`), which runs *after* this tool's input is already produced and only touches FAIL findings. This tool consumes Tool 1's real `report.json` (`report_schema.ComplianceReport`) directly rather than inventing a separate `findings.json` format — that artifact already exists and already contains all 17 controls' status/severity/evidence/remediation.
-- **No CIS Cisco IOS-XE Benchmark mapping exists anywhere in this repo.** Confirmed before implementation, and confirmed with the user rather than fabricated: the Reference line omits the CIS clause entirely (`VibeCoding controls.yaml v<version>` only). An operator with a real CIS mapping can extend `compliance_report_builder.py`'s per-finding row construction later.
+- **The spec's premise about where findings come from doesn't match this codebase.** It says the Compliance Checker's raw output already comes "via an LLM backend" — but `main.py`/`compliance_engine.py` (the actual Compliance Checker) is fully deterministic; no LLM is involved anywhere in producing its `report.json`. The LLM only appears in `agent_assisted_coding_advise.py` (the separate Compliance Remediation Advisor, see `COMPLIANCE_ANALYZER_PROMPT.md`), which runs *after* this tool's input is already produced and only touches FAIL findings. This tool consumes Tool 1's real `report.json` (`report_schema.ComplianceReport`) directly rather than inventing a separate `findings.json` format — that artifact already exists and already contains all 17 controls' status/severity/evidence/remediation.
+- **No CIS Cisco IOS-XE Benchmark mapping exists anywhere in this repo.** Confirmed before implementation, and confirmed with the user rather than fabricated: the Reference line omits the CIS clause entirely (`Agent-Assisted Coding controls.yaml v<version>` only). An operator with a real CIS mapping can extend `compliance_report_builder.py`'s per-finding row construction later.
 - **`controls.yaml` has no version field.** Restructuring it to add one would break every other tool's `yaml.safe_load()` (all expect a bare list). `<version>` is instead the short git commit hash of `controls.yaml`'s last change (`compliance_report_builder.controls_version`), falling back to `"unknown"` outside a git repo.
 - **Status model**: this system's actual states are `PASS`/`FAIL`/`EXCEPTION`/`MANUAL_REVIEW`, not the spec's literal `compliant`/`non_compliant`/`not_applicable`. Collapsing `EXCEPTION` into "compliant" would misrepresent a documented waiver as a clean pass in an audit document, so it's tracked as its own status throughout (`compliance_report_schema.FindingStatus`) and appears in Findings Detail with its exception reason shown, not silently folded into the pass count. `not_applicable` is rendered as always-0 - this system has no not-applicable concept for any control today, and reporting a fabricated count would be worse than an honest zero. `MANUAL_REVIEW` controls get their own report subsection (neither confirmed-compliant nor confirmed-non-compliant), inserted after Findings Detail.
 - **"Remediation Command" is sourced from `controls.yaml`'s `command_template` field**, not `config_example` (Tool 3 deliberately uses that one instead, for the opposite reason - literal example values, never LLM-touched) and not `remediation` (prose guidance, not a command block). For 16 of 17 controls `command_template` is already exactly the placeholder-only text this section needs, used as-is. `control_00004` (TACACS) is a documented special case: its `command_template` is real pre-converted Jinja for the Golden Config Creator's benefit, not `<word>` tokens, so this tool carries its own small hardcoded placeholder-style block for that one control (`compliance_report_builder._CONTROL_00004_PLACEHOLDER_COMMAND`).
 - **"Operator Inputs Required" is extracted by regex from the exact same string used as the Remediation Command**, not computed independently and cross-checked afterward - the same architectural-guarantee pattern already used for Tool 3's command-sourcing, making "the two sets match exactly" (acceptance criterion) true by construction rather than by a separate validation pass.
 - **Risk Statement is deterministic by default**: the first sentence of `controls.yaml`'s `risk` field, validated against a length cap and a filler-phrase deny-list; a control that fails validation fails the whole build with a clear, control-naming error (matching "a hard... check," not a style preference). An **optional** `--llm-polish` flag lets a local LLM (via the existing `local-llm`/`llm_client.py` infrastructure) retry exactly that field once, through a purpose-built system prompt (`llm_client.RISK_STATEMENT_SYSTEM_PROMPT`/`LLMClient.polish_statement`) - the rewrite is re-validated against the identical checks before being accepted, never trusted blindly. Default mode has zero dependency on a running local LLM.
 - **"Evidence Note" isn't a separate field in the fixed per-finding schema (§2.3)** - only "Evidence:" appears there; treated as the same field (an internal wording inconsistency in this spec, not a real second field), sourced deterministically from Tool 1's `evidence_found`, never LLM-touched.
-- Entrypoint is `compliance_report_main.py` (run as `python compliance_report_main.py ...`), not a packaged `compliance-report` console script - this repo has no packaging infrastructure, same reasoning as `golden_config_main.py`/`vibecoding_advise.py`.
+- Entrypoint is `compliance_report_main.py` (run as `python compliance_report_main.py ...`), not a packaged `compliance-report` console script - this repo has no packaging infrastructure, same reasoning as `golden_config_main.py`/`agent_assisted_coding_advise.py`.

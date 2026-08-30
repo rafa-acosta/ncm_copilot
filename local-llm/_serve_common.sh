@@ -35,9 +35,13 @@ trap 'rm -f "$LOG_FILE"' EXIT
 SERVER_PID=$!
 
 # Poll for the server actually accepting connections (or a clear failure),
-# then check whether GPU memory usage actually grew.
+# then check whether GPU memory usage actually grew. Default timeout is
+# generous (3 min) because a cold disk cache can make the larger model
+# (Qwen2.5-Coder-7B, ~4.7GB) take over a minute to load - a tighter window
+# produced a spurious "not ready" warning for a server that came up fine
+# moments later. Override with LLAMA_READY_TIMEOUT if your disk is slower still.
 READY=0
-for _ in $(seq 1 60); do
+for _ in $(seq 1 "${LLAMA_READY_TIMEOUT:-180}"); do
   sleep 1
   if grep -qiE "error|failed to (load|allocate)" "$LOG_FILE" 2>/dev/null; then
     echo "WARNING: llama-server logged an error during startup - check the output above." >&2
