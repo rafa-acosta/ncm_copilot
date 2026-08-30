@@ -1,6 +1,18 @@
+Prior to run the command go the the root folder of the project and activate VENV with: source .venv/bin/activate
+
 python main.py \
   --device-config samples/device_config.txt \
   --golden-config samples/golden_config.txt \
+  --controls controls.yaml \
+  --output-dir ./reports \
+  --formats html,pdf
+  
+  
+  
+Runner commands list
+
+  --device-config perfect_config.txt \
+  --golden-config golden_config.txt \
   --controls controls.yaml \
   --output-dir ./reports \
   --formats html,pdf
