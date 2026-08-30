@@ -1,0 +1,16 @@
+python main.py \
+  --device-config file_path\
+  --golden-config golden_config_path\
+  --controls controls.yaml \
+  --output-dir ./reports \
+  --formats html,pdf
+  
+
+python main.py \
+  --device-config golden_config.txt\
+  --golden-config golden_config.txt\
+  --controls controls.yaml \
+  --output-dir ./reports \
+  --formats html,pdf
+  
+  
