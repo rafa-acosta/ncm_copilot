@@ -1,5 +1,9 @@
 """CLI entrypoint for the Cisco IOS-XE Config Compliance Checker.
 
+Every run writes into a fresh timestamped subdirectory of --output-dir, so
+past runs are never overwritten, then refreshes an --output-dir/latest/
+mirror of that run - see run_archive.py.
+
 Single-device usage:
     python main.py \\
         --device-config device_config.txt \\
@@ -29,6 +33,7 @@ import yaml
 
 from compliance_engine import PRIORITY_CONTROL_IDS, ControlEvaluator, ControlResult
 from report_generator import render_fleet_html, render_html, render_json, render_pdf
+from run_archive import new_run_dir, refresh_latest
 
 
 def load_controls(path: Path) -> list[dict]:
@@ -103,7 +108,8 @@ def _evaluate_device(
 @click.option(
     "--output-dir", "output_dir", required=True,
     type=click.Path(file_okay=False, path_type=Path),
-    help="Directory to write the generated report(s) into.",
+    help="Root directory for the historic archive - each run gets its own output-dir/<timestamp>/ "
+    "subfolder (never overwritten) plus a refreshed output-dir/latest/ mirror.",
 )
 @click.option(
     "--formats", default="html,pdf", show_default=True,
@@ -145,17 +151,21 @@ def main(
         raise click.BadParameter(f"Unsupported format(s): {', '.join(sorted(unknown))}", param_hint="--formats")
 
     output_dir.mkdir(parents=True, exist_ok=True)
+    run_dir = new_run_dir(output_dir)
 
     if device_config_path:
         results = _evaluate_device(
-            device_config_path, golden_config_path, golden_config, controls, exceptions, output_dir, requested_formats
+            device_config_path, golden_config_path, golden_config, controls, exceptions, run_dir, requested_formats
         )
         if "html" in requested_formats:
-            click.echo(f"HTML report written to {output_dir / 'report.html'}")
+            click.echo(f"HTML report written to {run_dir / 'report.html'}")
         if "pdf" in requested_formats:
-            click.echo(f"PDF report written to {output_dir / 'report.pdf'}")
+            click.echo(f"PDF report written to {run_dir / 'report.pdf'}")
         if "json" in requested_formats:
-            click.echo(f"JSON report written to {output_dir / 'report.json'}")
+            click.echo(f"JSON report written to {run_dir / 'report.json'}")
+
+        latest_dir = refresh_latest(run_dir, output_dir)
+        click.echo(f"This run archived at {run_dir} - latest/ refreshed at {latest_dir}")
 
         fail_count = sum(1 for r in results if r.status == "FAIL")
         click.echo(f"Evaluated {len(results)} controls: {fail_count} FAIL.")
@@ -172,7 +182,7 @@ def main(
     for device_file in device_files:
         name = device_file.stem
         results = _evaluate_device(
-            device_file, golden_config_path, golden_config, controls, exceptions, output_dir / name, requested_formats
+            device_file, golden_config_path, golden_config, controls, exceptions, run_dir / name, requested_formats
         )
         results_by_device[name] = results
         report_links[name] = f"{name}/report.html"
@@ -180,17 +190,20 @@ def main(
         total_fail += fail_count
         click.echo(f"{name}: {len(results)} controls, {fail_count} FAIL")
 
-    fleet_html_path = output_dir / "fleet_report.html"
+    fleet_html_path = run_dir / "fleet_report.html"
     if requested_formats & {"html", "pdf"}:
         render_fleet_html(results_by_device, report_links, fleet_html_path)
     if "html" in requested_formats:
         click.echo(f"Fleet report written to {fleet_html_path}")
     if "pdf" in requested_formats:
-        fleet_pdf_path = output_dir / "fleet_report.pdf"
+        fleet_pdf_path = run_dir / "fleet_report.pdf"
         render_pdf(fleet_html_path, fleet_pdf_path)
         click.echo(f"Fleet PDF report written to {fleet_pdf_path}")
         if "html" not in requested_formats:
             fleet_html_path.unlink(missing_ok=True)
+
+    latest_dir = refresh_latest(run_dir, output_dir)
+    click.echo(f"This run archived at {run_dir} - latest/ refreshed at {latest_dir}")
 
     click.echo(f"Audited {len(device_files)} device(s): {total_fail} total FAIL across the fleet.")
     raise SystemExit(1 if total_fail else 0)

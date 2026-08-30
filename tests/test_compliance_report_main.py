@@ -16,12 +16,18 @@ DEVICE_CONFIG_PATH = REPO_ROOT / "samples" / "device_config.txt"
 
 
 def _real_report_path(tmp_path: Path) -> Path:
-    """Generate a real report.json via Tool 1 for use as this tool's input."""
+    """Generate a real report.json via Tool 1 for use as this tool's input.
+
+    Written under a distinctly-named folder (not "reports") - this tool's own
+    default --output-dir is also "reports", and several tests below chdir
+    into `tmp_path`, so sharing the name would make Tool 1's own archive run
+    collide with the run this test is actually trying to isolate and assert on.
+    """
     from click.testing import CliRunner as _Runner
 
     from main import main as compliance_checker_main
 
-    output_dir = tmp_path / "reports"
+    output_dir = tmp_path / "tool1_input_reports"
     _Runner().invoke(
         compliance_checker_main,
         [
@@ -32,7 +38,7 @@ def _real_report_path(tmp_path: Path) -> Path:
             "--formats", "json",
         ],
     )
-    return output_dir / "report.json"
+    return output_dir / "latest" / "report.json"
 
 
 def test_cli_produces_md_and_pdf(tmp_path):
@@ -52,6 +58,45 @@ def test_cli_produces_md_and_pdf(tmp_path):
     assert out_pdf.exists()
     assert (tmp_path / "out.md").exists()  # --out-md defaults to --out's stem + .md
     assert "17 controls" in result.output
+
+
+def test_cli_default_output_archives_and_refreshes_latest(tmp_path, monkeypatch):
+    report_path = _real_report_path(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "--report", str(report_path),
+            "--controls", str(CONTROLS_PATH),
+            "--device-role", "edge-router",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    output_dir = tmp_path / "compliance_reports"
+    assert (output_dir / "latest" / "report.pdf").exists()
+    assert (output_dir / "latest" / "report.md").exists()
+    run_dirs = [p for p in output_dir.iterdir() if p.is_dir() and p.name != "latest"]
+    assert len(run_dirs) == 1
+    assert (run_dirs[0] / "report.pdf").exists()
+
+
+def test_cli_explicit_out_bypasses_archive_entirely(tmp_path):
+    report_path = _real_report_path(tmp_path)
+    out_pdf = tmp_path / "standalone.pdf"
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "--report", str(report_path),
+            "--controls", str(CONTROLS_PATH),
+            "--device-role", "edge-router",
+            "--out", str(out_pdf),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert out_pdf.exists()
+    assert not (tmp_path / "compliance_reports").exists()  # no archive folder created at all
 
 
 def test_cli_out_md_explicit_override(tmp_path):

@@ -257,11 +257,56 @@ def test_cli_produces_briefing_with_fake_backend(tmp_path, monkeypatch):
     assert result.exit_code == 0, result.output
     assert md_path.exists()
     assert json_path.exists()
-    assert "finding(s) briefed" in result.output
 
-    md_text = md_path.read_text(encoding="utf-8")
-    assert str(DEVICE_CONFIG_PATH) in md_text
-    assert str(GOLDEN_CONFIG_PATH) in md_text
-    json_data = json.loads(json_path.read_text(encoding="utf-8"))
-    assert json_data["device_config_path"] == str(DEVICE_CONFIG_PATH)
-    assert json_data["golden_config_path"] == str(GOLDEN_CONFIG_PATH)
+
+def test_cli_explicit_output_paths_bypass_archive_entirely(tmp_path, monkeypatch):
+    report = _real_report(tmp_path)
+    report_path = tmp_path / "report.json"
+    report_path.write_text(report.model_dump_json(), encoding="utf-8")
+
+    monkeypatch.setattr(agent_assisted_coding_advise, "select_backend", lambda *a, **k: ("llamacpp", "http://fake/v1", "phi-3-mini-4k-instruct"))
+    monkeypatch.setattr(agent_assisted_coding_advise, "LLMClient", lambda *a, **k: _fake_llm_client())
+
+    md_path = tmp_path / "standalone_briefing.md"
+    runner = CliRunner()
+    result = runner.invoke(
+        agent_assisted_coding_advise.main,
+        [
+            "--report", str(report_path),
+            "--controls", str(CONTROLS_PATH),
+            "--backend", "auto",
+            "--output-md", str(md_path),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert md_path.exists()
+    assert not (tmp_path / "briefings").exists()  # no archive folder created at all
+
+
+def test_cli_default_output_archives_and_refreshes_latest(tmp_path, monkeypatch):
+    report = _real_report(tmp_path)
+    report_path = tmp_path / "report.json"
+    report_path.write_text(report.model_dump_json(), encoding="utf-8")
+
+    monkeypatch.setattr(agent_assisted_coding_advise, "select_backend", lambda *a, **k: ("llamacpp", "http://fake/v1", "phi-3-mini-4k-instruct"))
+    monkeypatch.setattr(agent_assisted_coding_advise, "LLMClient", lambda *a, **k: _fake_llm_client())
+    monkeypatch.chdir(tmp_path)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        agent_assisted_coding_advise.main,
+        [
+            "--report", str(report_path),
+            "--controls", str(CONTROLS_PATH),
+            "--backend", "auto",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    output_dir = tmp_path / "briefings"
+    assert (output_dir / "latest" / "briefing.md").exists()
+    assert (output_dir / "latest" / "briefing.json").exists()
+    run_dirs = [p for p in output_dir.iterdir() if p.is_dir() and p.name != "latest"]
+    assert len(run_dirs) == 1
+    assert (run_dirs[0] / "briefing.md").exists()

@@ -1,6 +1,12 @@
 # Running the App
 
-This project (Agent-Assisted Coding) is four separate command-line tools that share one file, `controls.yaml`, as their single source of truth. This guide covers installing them and every way to invoke each one. For what each file/folder is and how the tools relate, see [`PROJECT_STRUCTURE.md`](PROJECT_STRUCTURE.md). For what each Python function actually does internally, see [`FUNCTION_REFERENCE.md`](FUNCTION_REFERENCE.md).
+This project (Agent-Assisted Coding) is five separate command-line tools that share one file, `controls.yaml`, as their single source of truth. This guide covers installing them and every way to invoke each one. For what each file/folder is and how the tools relate, see [`PROJECT_STRUCTURE.md`](PROJECT_STRUCTURE.md). For what each Python function actually does internally, see [`FUNCTION_REFERENCE.md`](FUNCTION_REFERENCE.md).
+
+### Historic archiving — applies to Tools 1, 3, and 5
+
+`main.py`, `agent_assisted_coding_advise.py`, and `compliance_report_main.py` each write their output into a fresh timestamped subdirectory of an `--output-dir` (`YYYYMMDD-HHMMSS`, e.g. `reports/20260830-144054/`), so a run never overwrites a previous one, and then refresh an `--output-dir/latest/` mirror alongside it — a stable, predictable path for anything that wants "the current one" (a bookmark, a script, a published artifact) without hunting through timestamps. This is unconditional for Tool 1. Tools 3 and 5 archive by default too, but fall back to old-style fixed-path writes with no archive folder at all if you pass their explicit output-path flags (`--output-md`/`--output-json` for Tool 3, `--out`/`--out-md` for Tool 5) — the escape hatch for scripting/automation that needs one predictable filename.
+
+Tools 1, 3, and 5 each default `--output-dir` to a **different** folder name (`reports`, `briefings`, `compliance_reports` respectively). This is deliberate, not an oversight: `refresh_latest()` fully replaces `<output-dir>/latest/` on every run rather than merging into it, and both Tool 1 and Tool 5 independently produce a file named `report.pdf` — pointing two tools at the same `--output-dir` would make the second tool's run silently delete the first tool's `latest/` output. You can still point multiple tools at the same `--output-dir` deliberately if you want one unified, chronologically-interleaved archive; just be aware that only the timestamped subfolders are safe from collision — `latest/` is not.
 
 ## Prerequisites
 
@@ -48,7 +54,9 @@ Audits one or more device configs against a golden config baseline, using `contr
                                 Mutually exclusive with --device-config.
 --golden-config FILE           Path to the golden config baseline.               [required]
 --controls FILE                Path to controls.yaml.                            [required]
---output-dir DIRECTORY         Directory to write the generated report(s) into.  [required]
+--output-dir DIRECTORY         Historic archive root - each run gets its own
+                                output-dir/<timestamp>/ subfolder (never overwritten)
+                                plus a refreshed output-dir/latest/ mirror.  [required]
 --formats TEXT                 Comma-separated: html, pdf, json.        [default: html,pdf]
 --priority-only                Limit evaluation to control_00001-control_00015.
 --exceptions FILE               Optional YAML file mapping control_id -> exception reason.
@@ -67,7 +75,7 @@ python main.py \
   --output-dir ./reports \
   --formats html,pdf
 ```
-**Output:** `reports/report.html` and `reports/report.pdf`. Console prints `HTML report written to ...`, `PDF report written to ...`, then `Evaluated N controls: M FAIL.` **Exit code:** `1` if any control FAILed, `0` otherwise (this is deliberate — wire it into CI or a script and check `$?`).
+**Output:** `reports/<timestamp>/report.html` and `.pdf`, plus a refreshed `reports/latest/report.html` and `.pdf` (see "Historic archiving" above). Console prints `HTML report written to ...`, `PDF report written to ...`, then `This run archived at reports/<timestamp> - latest/ refreshed at reports/latest`, then `Evaluated N controls: M FAIL.` **Exit code:** `1` if any control FAILed, `0` otherwise (this is deliberate — wire it into CI or a script and check `$?`).
 
 ### Scenario: single device, JSON report (feeds the Remediation Advisor)
 
@@ -79,7 +87,7 @@ python main.py \
   --output-dir ./reports \
   --formats json
 ```
-**Output:** `reports/report.json` — a `ComplianceReport` (see `report_schema.py`), including `device_config_path` and `golden_config_path` recording exactly which two files were compared. This is the input `agent_assisted_coding_advise.py --report` expects.
+**Output:** `reports/<timestamp>/report.json`, plus a refreshed `reports/latest/report.json` — a `ComplianceReport` (see `report_schema.py`), including `device_config_path` and `golden_config_path` recording exactly which two files were compared. Point `agent_assisted_coding_advise.py --report` at `reports/latest/report.json` for "always the most recent run" or at a specific timestamped path to brief an older run.
 
 ### Scenario: batch mode (a folder of devices)
 
@@ -91,7 +99,7 @@ python main.py \
   --output-dir ./reports \
   --formats html,json
 ```
-Every `*.txt` file directly inside `./device_configs/` is audited against the same golden config. **Output:** `reports/<device_stem>/report.html` and `.json` per device, plus one `reports/fleet_report.html` summarizing all devices (worst-compliance-first, with a "most common failures across the fleet" table). Console prints one `<name>: N controls, M FAIL` line per device, then `Audited N device(s): M total FAIL across the fleet.` **Exit code:** `1` if any device has any FAIL.
+Every `*.txt` file directly inside `./device_configs/` is audited against the same golden config. **Output:** `reports/<timestamp>/<device_stem>/report.html` and `.json` per device, plus one `reports/<timestamp>/fleet_report.html` summarizing all devices (worst-compliance-first, with a "most common failures across the fleet" table) — and `reports/latest/` refreshed to mirror all of it. Console prints one `<name>: N controls, M FAIL` line per device, then `Audited N device(s): M total FAIL across the fleet.` **Exit code:** `1` if any device has any FAIL.
 
 ### Scenario: only the priority controls (00001–00015)
 
@@ -184,35 +192,38 @@ Turns a Compliance Checker JSON report into an LLM-written remediation briefing.
 --controls FILE                  Path to controls.yaml.                                   [required]
 --backend TEXT                   'auto', or a name from local-llm/config.yaml's backends
                                   registry (e.g. qwen_coder, phi4_mini).        [default: auto]
---output-md FILE                 Markdown output path.                    [default: briefing.md]
---output-json FILE               JSON output path.                      [default: briefing.json]
+--output-dir DIRECTORY           Historic archive root, used unless --output-md/--output-json
+                                  is given.                              [default: briefings]
+--output-md FILE                 Write Markdown to exactly this path instead (bypasses
+                                  the --output-dir archive).
+--output-json FILE               Write JSON to exactly this path instead (bypasses
+                                  the --output-dir archive).
 --severity-min [low|medium|high] Only include findings at or above this severity.
 --device-vars FILE                Optional - variables already set there aren't flagged as missing.
 --help
 ```
 
-### Scenario: basic briefing
+### Scenario: basic briefing (default archiving)
 
 ```bash
 python main.py --device-config samples/device_config.txt --golden-config samples/golden_config.txt \
   --controls controls.yaml --output-dir ./reports --formats json
 
 python agent_assisted_coding_advise.py \
-  --report reports/report.json \
+  --report reports/latest/report.json \
   --controls controls.yaml \
-  --backend auto \
-  --output-md briefing.md \
-  --output-json briefing.json
+  --backend auto
 ```
-**Output:** `briefing.md` (human-readable, severity-grouped) and `briefing.json` (structured, includes a `suggested_device_vars_patch` block shaped like `device_vars.json` for feeding back into Tool 2). Console prints which backend was auto-selected and `N finding(s) briefed.` **Exit code:** `0` on success.
+**Output:** `briefings/<timestamp>/briefing.md` and `briefing.json`, plus a refreshed `briefings/latest/` mirror (human-readable Markdown, severity-grouped; the JSON is structured and includes a `suggested_device_vars_patch` block shaped like `device_vars.json` for feeding back into Tool 2). Console prints which backend was auto-selected, `Markdown briefing written to ...`, `JSON briefing written to ...`, `This run archived at briefings/<timestamp> - latest/ refreshed at briefings/latest`, then `N finding(s) briefed.` **Exit code:** `0` on success.
 
-### Scenario: only brief High-severity findings, skip variables already known
+### Scenario: only brief High-severity findings, skip variables already known, write to fixed filenames
 
 ```bash
-python agent_assisted_coding_advise.py --report reports/report.json --controls controls.yaml \
+python agent_assisted_coding_advise.py --report reports/latest/report.json --controls controls.yaml \
   --severity-min high --device-vars device_vars.json \
   --output-md briefing_high.md --output-json briefing_high.json
 ```
+Giving `--output-md`/`--output-json` explicitly bypasses the `briefings/` archive entirely — only `briefing_high.md` and `briefing_high.json` are written, no timestamped folder or `latest/` mirror is created. Useful for scripting/automation that expects one fixed, predictable filename.
 
 ### What the LLM does and doesn't do
 
@@ -226,11 +237,63 @@ The LLM only ever writes the 2–3 sentence "what's missing and why" explanation
 | `Error: Unknown backend '<name>'. Known backends: ...` | Typo'd `--backend`, or that name isn't in `local-llm/config.yaml`. |
 | `pydantic.ValidationError` while loading `--report` | The JSON file isn't a valid `ComplianceReport` (wrong tool produced it, or it's corrupted). |
 
-## 5. Batch reports and the LLM advisor
+## 5. Tool 5 — Compliance Report Generator (`compliance_report_main.py`)
+
+Turns Tool 1's `report.json` into an audit-grade Markdown + PDF compliance report (deterministic — no LLM involved unless `--llm-polish` is passed). See `COMPLIANCE_REPORT_PROMPT.md` for the full spec.
+
+### All flags
+
+```
+--report FILE                     Compliance Checker JSON report (main.py --formats json). [required]
+--controls FILE                   Path to controls.yaml.                                   [required]
+--device-role TEXT                e.g. edge-router, access-switch, core-switch.             [required]
+--output-dir DIRECTORY            Historic archive root, used unless --out/--out-md
+                                   is given.                        [default: compliance_reports]
+--out FILE                        Write the PDF to exactly this path instead (bypasses
+                                   the --output-dir archive).
+--out-md FILE                     Write the Markdown to exactly this path instead (bypasses
+                                   the --output-dir archive). Defaults to --out's stem + .md
+                                   when --out is given.
+--audit-date TEXT                 Override the audit date (YYYY-MM-DD). Default: the
+                                   report's generated_at date.
+--llm-polish                      Let a local LLM retry a risk statement that fails
+                                   deterministic validation (re-validated before acceptance).
+--backend TEXT                    Only relevant with --llm-polish: 'auto', or a name from
+                                   local-llm/config.yaml's registry.         [default: auto]
+--help
+```
+
+### Scenario: basic report (default archiving)
+
+```bash
+python compliance_report_main.py \
+  --report reports/latest/report.json \
+  --controls controls.yaml \
+  --device-role edge-router
+```
+**Output:** `compliance_reports/<timestamp>/report.md` and `report.pdf`, plus a refreshed `compliance_reports/latest/` mirror. Console prints `Markdown report written to ...`, `PDF report written to ...`, `This run archived at compliance_reports/<timestamp> - latest/ refreshed at compliance_reports/latest`, then a one-line compliance summary (`N controls: M compliant, K findings, J manual review (P% compliant).`). **Exit code:** `0` on success, non-zero if `--report` isn't a valid `ComplianceReport` or a risk statement fails validation (see Common errors).
+
+### Scenario: fixed output filenames (bypasses the archive)
+
+```bash
+python compliance_report_main.py --report reports/latest/report.json --controls controls.yaml \
+  --device-role edge-router --out report.pdf
+```
+Giving `--out` (and/or `--out-md`) writes only to that exact path — no `compliance_reports/` folder is created at all.
+
+### Common errors
+
+| Symptom | Cause |
+|---|---|
+| `'<path>' is not a valid Compliance Checker report: ...` | `--report` isn't a `ComplianceReport` JSON (wrong tool produced it, or it's corrupted). |
+| A control's risk statement fails deterministic validation, tool exits non-zero | The `risk` text in `controls.yaml` doesn't meet the report's writing-quality rules (e.g. hedging language). Re-run with `--llm-polish`, or edit that control's `risk` text directly. |
+| PDF requested but WeasyPrint import fails | System libraries missing — see Prerequisites. |
+
+## 6. Batch reports and the LLM advisor
 
 The Remediation Advisor currently reads **one** device's `report.json` at a time — `main.py`'s batch mode produces a `report.json` per device (no combined multi-device JSON yet; only the HTML `fleet_report.html` is a true fleet-level artifact today). To brief multiple devices, run `agent_assisted_coding_advise.py` once per device's `report.json`.
 
-## 6. Local LLM backend (`local-llm/`)
+## 7. Local LLM backend (`local-llm/`)
 
 Provisions and runs the model `agent_assisted_coding_advise.py` talks to. See `local-llm/README.md` and `LOCAL_LLM_SETUP_PROMPT.md` for the full rationale (why llama.cpp, why Vulkan not CUDA on Linux, the 6GB-VRAM "one model at a time" constraint).
 
