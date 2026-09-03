@@ -185,8 +185,22 @@ class ControlEvaluator:
         tacacs_blocks = device.blocks(r"^tacacs server\s")
         if len(tacacs_blocks) < 2:
             failures.append("Fewer than two 'tacacs server' definitions found.")
+        addresses_seen: dict[str, str] = {}
         for block in tacacs_blocks:
             parent, children = block[0], block[1:]
+            address_line = next((c for c in children if c.startswith("address ipv4")), None)
+            if not address_line:
+                failures.append(f"'{parent}': no 'address ipv4' command found.")
+            else:
+                address = address_line.split()[-1]
+                duplicate_of = addresses_seen.get(address)
+                if duplicate_of:
+                    failures.append(
+                        f"'{parent}' and '{duplicate_of}' both use the same address ({address}); "
+                        "each TACACS server must have a distinct address."
+                    )
+                else:
+                    addresses_seen[address] = parent
             if not any(re.match(r"key \d", c) for c in children):
                 failures.append(f"'{parent}': no 'key' command found.")
             if not any(c.startswith("timeout") for c in children):

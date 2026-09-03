@@ -11,7 +11,7 @@
   "control_00004": {
     "tacacs_servers": [
       { "name": "ACME_TACACS_01", "address": "192.168.100.100", "key": "0123456789", "timeout": 10 },
-      { "name": "ACME_TACACS_02", "address": "192.168.100.102", "key": "0123456789", "timeout": 10 }
+      { "name": "ACME_TACACS_02", "address": "192.168.100.101", "key": "0123456789", "timeout": 10 }
     ],
     "tacacs_group_name": "ACME_TACACS_SERVER_GROUP",
     "source_interface": "Loopback0"

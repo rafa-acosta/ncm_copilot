@@ -185,9 +185,11 @@ def test_tacacs_type6_key_passes_that_condition():
         [
             "aaa new-model",
             "tacacs server ACME_TACACS_01",
+            " address ipv4 192.168.100.100",
             " key 6 encryptedvalue",
             " timeout 5",
             "tacacs server ACME_TACACS_02",
+            " address ipv4 192.168.100.101",
             " key 6 encryptedvalue",
             " timeout 5",
             "aaa group server tacacs+ ACME_TACACS_SERVER_GROUP",
@@ -198,6 +200,51 @@ def test_tacacs_type6_key_passes_that_condition():
     )
     result = evaluate("control_00004", device)
     assert result.status == STATUS_PASS
+
+
+def test_tacacs_missing_address_fails():
+    device = "\n".join(
+        [
+            "aaa new-model",
+            "tacacs server ACME_TACACS_01",
+            " key 6 encryptedvalue",
+            " timeout 5",
+            "tacacs server ACME_TACACS_02",
+            " address ipv4 192.168.100.101",
+            " key 6 encryptedvalue",
+            " timeout 5",
+            "aaa group server tacacs+ ACME_TACACS_SERVER_GROUP",
+            " server name ACME_TACACS_01",
+            " server name ACME_TACACS_02",
+            " ip tacacs source-interface Loopback0",
+        ]
+    )
+    result = evaluate("control_00004", device)
+    assert result.status == STATUS_FAIL
+    assert any("address ipv4" in d for d in result.details)
+
+
+def test_tacacs_duplicate_address_fails():
+    device = "\n".join(
+        [
+            "aaa new-model",
+            "tacacs server ACME_TACACS_01",
+            " address ipv4 192.168.100.100",
+            " key 6 encryptedvalue",
+            " timeout 5",
+            "tacacs server ACME_TACACS_02",
+            " address ipv4 192.168.100.100",
+            " key 6 encryptedvalue",
+            " timeout 5",
+            "aaa group server tacacs+ ACME_TACACS_SERVER_GROUP",
+            " server name ACME_TACACS_01",
+            " server name ACME_TACACS_02",
+            " ip tacacs source-interface Loopback0",
+        ]
+    )
+    result = evaluate("control_00004", device)
+    assert result.status == STATUS_FAIL
+    assert any("same address" in d for d in result.details)
 
 
 def test_inconsistent_password_hash_types_fails():

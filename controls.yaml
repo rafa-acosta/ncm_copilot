@@ -144,6 +144,7 @@
   not_compliance_conditions:
     - "The commands are not present with the assigned variables (server names, group, source-interface)"
     - "TACACS key is stored using reversible Type 7 encoding instead of Type 6 ('key config-key password-encrypt' + 'key 6 <key>')"
+    - "'address ipv4' is missing under a 'tacacs server' block, or two TACACS servers share the same address"
   exceptions:
     - "In some cases there is no TACACS server active in the environment. This condition should be indicated prior to device configuration."
     - "Some old IOS versions do not support these commands."
