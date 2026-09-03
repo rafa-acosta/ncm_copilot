@@ -94,7 +94,6 @@ def test_self_evaluation_against_compliance_checker():
     # ControlEvaluator with the generated golden config as BOTH the device and
     # golden config. A self-consistent baseline should PASS itself everywhere
     # except two known, deliberate gaps:
-    #  - control_00012 is manual_review by design (banner wording).
     #  - control_00016's mandatory-command items (e.g. 'no ip http server')
     #    are never auto-rendered (GOLDEN_CONFIG_CREATOR.md section 12); only its
     #    CoPP line renders, so the Compliance Checker's fuller check still fails.
@@ -102,9 +101,14 @@ def test_self_evaluation_against_compliance_checker():
     # 'access-class' references by name - no control in controls.yaml renders
     # 'ip access-list' bodies - so control_00014 is expected to FAIL here too.
     # That's a known scope gap, not asserted as a silent pass.
+    # control_00012 (Banners) is NOT in this gap list: its golden-config
+    # rendering is a MANUAL REVIEW REQUIRED comment block wrapped around a
+    # real, uncommented 'banner motd' line (see golden_config_builder.py's
+    # _manual_review_block), and Tool 1's checker is presence-only - so it
+    # correctly self-evaluates as PASS here.
     import yaml as _yaml
 
-    from compliance_engine import STATUS_FAIL, STATUS_MANUAL_REVIEW, STATUS_PASS, ControlEvaluator
+    from compliance_engine import STATUS_FAIL, STATUS_PASS, ControlEvaluator
 
     builder = _builder()
     golden = builder.build()
@@ -112,7 +116,6 @@ def test_self_evaluation_against_compliance_checker():
     evaluator = ControlEvaluator()
 
     expected_non_pass = {
-        "control_00012": STATUS_MANUAL_REVIEW,
         "control_00014": STATUS_FAIL,  # references an ACL whose body is never rendered
         "control_00016": STATUS_FAIL,  # mandatory-command items deliberately not auto-rendered
     }

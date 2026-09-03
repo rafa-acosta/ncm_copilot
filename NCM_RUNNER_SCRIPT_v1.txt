@@ -11,8 +11,47 @@ python main.py \
   
 Runner commands list
 
+python main.py \
   --device-config perfect_config.txt \
   --golden-config golden_config.txt \
+  --controls controls.yaml \
+  --output-dir ./reports \
+  --formats html,pdf
+  
+
+++++++++++++++++++++ Log de runs  ++++++++++++++++++++ 
+ 
+python main.py \
+  --device-config samples/device_config.txt \
+  --golden-config samples/golden_config.txt \
+  --controls controls.yaml \
+  --output-dir ./reports \
+  --formats html,pdf
+  
+02/09/2026
+
+python main.py \
+  --device-config perfect_config.txt \
+  --golden-config perfect_config.txt \
+  --controls controls.yaml \
+  --output-dir ./reports \
+  --formats html,pdf
+  
+02/09/2026
+
+python main.py \
+  --device-config samples/perfect_config.txt \
+  --golden-config samples/perfect_config.txt \
+  --controls controls.yaml \
+  --output-dir ./reports \
+  --formats html,pdf
+  
+  
+  
+  
+python main.py \
+  --device-config samples/no_aaa_perfect_config.txt \
+  --golden-config samples/perfect_config.txt \
   --controls controls.yaml \
   --output-dir ./reports \
   --formats html,pdf

@@ -10,7 +10,7 @@ Every one of the four tools reads `controls.yaml`, and none of them hardcodes co
 1. Load `controls.yaml` (optionally filtered to `--priority-only`'s 15 controls) and an optional `--exceptions` file.
 2. Read the device config and golden config as plain text (not parsed yet).
 3. For each control, `ControlEvaluator.evaluate_control` parses both texts into a `ConfigTree` (a `ciscoconfparse2` wrapper) and dispatches to that control's own `_check_control_XXXXX` method, which runs its specific regex checks and returns a list of failure reasons (empty = compliant).
-4. A control with `manual_review: true` in `controls.yaml` skips step 3 entirely and is always `MANUAL_REVIEW`.
+4. A control with `manual_review: true` in `controls.yaml` **and no `_check_control_XXXXX` method** skips step 3 entirely and is always `MANUAL_REVIEW`. A checker method, when one exists, always takes precedence over the flag — `control_00012` (Banners) has both: `manual_review: true` still governs Tool 2's rendering (step 2 below), but Tool 1 runs its checker (a presence-only check for `banner motd`) rather than reporting `MANUAL_REVIEW`.
 5. A control with failures gets its status flipped from `FAIL` to `EXCEPTION` if `--exceptions` names it (a passing control is never touched by this — an exception can't "improve" a pass).
 6. Aggregate all `ControlResult`s and render HTML/PDF/JSON via `report_generator.py`. In batch mode (`--device-config-dir`), steps 2–6 repeat once per device file, plus one additional fleet-summary render.
 

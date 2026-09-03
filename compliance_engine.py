@@ -13,6 +13,14 @@ Golden-config values are used two ways, decided per control:
   - device-unique values (hostname parts, local usernames/passwords, banner
     text) are checked for structural/policy correctness only, never
     literal-compared against golden's example value.
+
+A `_check_control_XXXXX` method, when one exists, always wins over the
+control's `manual_review` flag - `manual_review` is only a fallback for
+controls with no automated checker at all (evaluate_control raises if
+neither exists). control_00012 (Banners) is the one control where both are
+true: `manual_review: true` still gates Tool 2's golden-config rendering
+(wording approval stays a human call there), but Tool 1's compliance score
+now takes a deterministic presence check - see _check_control_00012.
 """
 
 from __future__ import annotations
@@ -71,12 +79,11 @@ class ControlEvaluator:
         """Evaluate one control dict (as loaded from controls.yaml) and return a ControlResult."""
         control_id = control["control_id"]
 
-        if control.get("manual_review"):
-            return self._result(control, STATUS_MANUAL_REVIEW, control["evidence"],
-                                 ["This control requires human review of the actual wording/content."])
-
         checker = getattr(self, f"_check_{control_id}", None)
         if checker is None:
+            if control.get("manual_review"):
+                return self._result(control, STATUS_MANUAL_REVIEW, control["evidence"],
+                                     ["This control requires human review of the actual wording/content."])
             raise ValueError(f"No deterministic checker implemented for {control_id}")
 
         device = ConfigTree(device_config)
@@ -315,6 +322,14 @@ class ControlEvaluator:
                 "An SNMPv1/v2c community string ('snmp-server community') coexists with the SNMPv3 configuration."
             )
         return failures
+
+    def _check_control_00012(self, device: ConfigTree, golden: ConfigTree, control: dict) -> list[str]:
+        # Presence-only: whether the banner's wording meets corporate legal/policy
+        # language is a human judgment call this checker doesn't attempt - see
+        # controls.yaml's manual_review flag, which still gates Tool 2's rendering.
+        if not device.exists(r"^banner motd\b"):
+            return ["'banner motd' is not configured."]
+        return []
 
     def _check_control_00013(self, device: ConfigTree, golden: ConfigTree, control: dict) -> list[str]:
         failures = []

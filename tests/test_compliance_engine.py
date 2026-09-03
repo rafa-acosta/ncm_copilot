@@ -274,6 +274,26 @@ def test_exception_does_not_apply_when_passing():
     assert result.status == STATUS_PASS
 
 
-def test_banner_control_is_manual_review():
+def test_banner_present_passes():
     result = evaluate("control_00012", "banner motd $ hi $\n")
+    assert result.status == STATUS_PASS
+
+
+def test_banner_absent_fails():
+    result = evaluate("control_00012", "hostname ACME_USA_ROUTER_INTERNET_BLN_01\n")
+    assert result.status == STATUS_FAIL
+    assert any("banner motd" in d for d in result.details)
+
+
+def test_manual_review_fallback_used_only_when_no_checker_exists():
+    # control_00012 has both a checker AND manual_review: true in the real
+    # controls.yaml - the checker wins (see the two tests above). This
+    # exercises the other branch directly: a control with manual_review: true
+    # and no _check_control_XXXXX method still falls back to MANUAL_REVIEW.
+    control = {
+        "control_id": "control_09999", "title": "Fixture", "severity": "Low",
+        "risk": "x", "remediation": "x", "evidence": "x", "manual_review": True,
+    }
+    evaluator = ControlEvaluator()
+    result = evaluator.evaluate_control(control, "hostname x\n", GOLDEN_TEXT)
     assert result.status == STATUS_MANUAL_REVIEW

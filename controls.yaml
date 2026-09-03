@@ -423,7 +423,7 @@
     Configure a 'banner motd' containing approved legal language regarding
     authorized access and monitoring.
   evidence: "'banner motd' section in the running configuration."
-  deterministic_validation: false
+  deterministic_validation: true
   manual_review: true
   config_example: |
     banner motd $ ++This is the message of the day++ $

@@ -157,7 +157,19 @@ def test_bucket_findings_findings_detail_sorted_high_to_low():
 
 
 def test_bucket_findings_manual_review_kept_separate():
-    report = _real_report()
+    # control_00012 (Banners) now gets a deterministic presence check in the
+    # real evaluator (see compliance_engine.py), so it no longer produces a
+    # MANUAL_REVIEW status against the real sample configs - build a synthetic
+    # report to exercise bucket_findings' manual-review bucketing directly.
+    entries = [
+        {
+            "control_id": "control_00012", "title": "Banners", "status": "MANUAL_REVIEW", "severity": "Medium",
+            "risk": "x", "evidence_found": "'banner motd' section in the running configuration.",
+            "remediation": "x", "explanation": "",
+            "details": ["This control requires human review of the actual wording/content."],
+        }
+    ]
+    report = ComplianceReport(device_name="RTR01", generated_at="2026-08-26T12:00:00", results=entries)
     controls_by_id = _controls_by_id()
     findings_detail, manual_review, appendix, counts = crb.bucket_findings(report, controls_by_id)
     assert any(row.control_id == "control_00012" for row in manual_review)  # Banners
