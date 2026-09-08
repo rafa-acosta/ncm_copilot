@@ -224,6 +224,93 @@ def test_tacacs_missing_address_fails():
     assert any("address ipv4" in d for d in result.details)
 
 
+_REAL_TACACS_GOLDEN = "\n".join(
+    [
+        "tacacs server ACME_TACACS_01",
+        " address ipv4 192.168.100.100",
+        " key 6 <ENCRYPTED_TACACS_KEY>",
+        " timeout 5",
+        "tacacs server ACME_TACACS_02",
+        " address ipv4 192.168.100.101",
+        " key 6 <ENCRYPTED_TACACS_KEY>",
+        " timeout 5",
+    ]
+)
+
+
+def test_tacacs_address_mismatch_against_real_golden_fails():
+    # GOLDEN_TEXT (samples/golden_config.txt) uses <tacacs_server_N_ip>
+    # placeholders, so it can never exercise the literal-match branch - this
+    # golden text supplies real, non-placeholder addresses instead.
+    device = "\n".join(
+        [
+            "aaa new-model",
+            "tacacs server ACME_TACACS_01",
+            " address ipv4 192.168.100.100",
+            " key 6 encryptedvalue",
+            " timeout 5",
+            "tacacs server ACME_TACACS_02",
+            " address ipv4 10.1.1.100",  # doesn't match golden's 192.168.100.101
+            " key 6 encryptedvalue",
+            " timeout 5",
+            "aaa group server tacacs+ ACME_TACACS_SERVER_GROUP",
+            " server name ACME_TACACS_01",
+            " server name ACME_TACACS_02",
+            " ip tacacs source-interface Loopback0",
+        ]
+    )
+    result = evaluate("control_00004", device, golden_text=_REAL_TACACS_GOLDEN)
+    assert result.status == STATUS_FAIL
+    assert any("does not match the corporate" in d for d in result.details)
+
+
+def test_tacacs_address_matching_real_golden_passes():
+    device = "\n".join(
+        [
+            "aaa new-model",
+            "tacacs server ACME_TACACS_01",
+            " address ipv4 192.168.100.100",
+            " key 6 encryptedvalue",
+            " timeout 5",
+            "tacacs server ACME_TACACS_02",
+            " address ipv4 192.168.100.101",
+            " key 6 encryptedvalue",
+            " timeout 5",
+            "aaa group server tacacs+ ACME_TACACS_SERVER_GROUP",
+            " server name ACME_TACACS_01",
+            " server name ACME_TACACS_02",
+            " ip tacacs source-interface Loopback0",
+        ]
+    )
+    result = evaluate("control_00004", device, golden_text=_REAL_TACACS_GOLDEN)
+    assert result.status == STATUS_PASS
+
+
+def test_tacacs_address_mismatch_against_placeholder_golden_does_not_fail_on_address():
+    # GOLDEN_TEXT's addresses are <tacacs_server_N_ip> placeholders - any real
+    # device address is "internally consistent" and shouldn't be flagged as a
+    # literal mismatch (only presence/duplication are checked in that case).
+    device = "\n".join(
+        [
+            "aaa new-model",
+            "tacacs server ACME_TACACS_01",
+            " address ipv4 176.156.1.1",
+            " key 6 encryptedvalue",
+            " timeout 5",
+            "tacacs server ACME_TACACS_02",
+            " address ipv4 10.1.1.100",
+            " key 6 encryptedvalue",
+            " timeout 5",
+            "aaa group server tacacs+ ACME_TACACS_SERVER_GROUP",
+            " server name ACME_TACACS_01",
+            " server name ACME_TACACS_02",
+            " ip tacacs source-interface Loopback0",
+        ]
+    )
+    result = evaluate("control_00004", device)
+    assert result.status == STATUS_PASS
+
+
 def test_tacacs_duplicate_address_fails():
     device = "\n".join(
         [

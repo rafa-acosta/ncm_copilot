@@ -1,82 +1,91 @@
 {
-  "control_00001": {
-    "hostname": "ACME_USA_RT_INT_BLN_01"
-  },
-  "control_00002": {
-    "company_name": "acme.com"
-  },
-  "control_00003": {
-    "tacacs_group": "ACME_TACACS_SERVER_GROUP"
-  },
-  "control_00004": {
-    "tacacs_servers": [
-      { "name": "ACME_TACACS_01", "address": "192.168.100.100", "key": "0123456789", "timeout": 10 },
-      { "name": "ACME_TACACS_02", "address": "192.168.100.101", "key": "0123456789", "timeout": 10 }
-    ],
-    "tacacs_group_name": "ACME_TACACS_SERVER_GROUP",
-    "source_interface": "Loopback0"
-  },
-  "control_00005": {
-    "user": "admin",
-    "privilege_level": 15,
-    "password": "0123456789",
-    "secret_psswd": "0123456789"
-  },
-  "control_00006": {
-    "hostname": "ACME_USA_RT_INT_BLN_01",
-    "domain_name": "acme.com",
-    "ssh_version": 2,
-    "ssh_timeout": 60,
-    "ssh_auth_retries": 3
-  },
-  "control_00008": {
-    "vty_line_numbers": "0 15"
-  },
-  "control_00009": {
-    "ntp_ip_address": "10.10.10.100",
-    "secondary_ntp_ip_address": "20.20.20.100",
-    "ntp_key_id": 1,
-    "ntp_key_value": "0123456789"
-  },
-  "control_00010": {
-    "ip_syslog_server": "30.30.30.100",
-    "syslog_interface": "Loopback0"
-  },
-  "control_00011": {
-    "group_name": "acme_snmp_grp01",
-    "user_name": "acme_snmp_user",
-    "auth_password": "0123456789",
-    "priv_password": "9876543210",
-    "snmp_server_ip": "40.40.40.100"
-  },
-  "control_00012": {
-    "message_of_the_day": "Authorized access only. All activity is monitored."
-  },
-  "control_00013": {
-    "minimum_length_number": 10
-  },
-  "control_00014": {
-    "console_password": "REDACTED",
-    "vty_password": "REDACTED",
-    "start_line_number": 0,
-    "end_line_number": 15,
-    "minutes": 10,
-    "seconds": 0,
-    "allowed_protocols": "ssh",
-    "vty_acl_name": "ACME_VTY_MGMT_ACL"
-  },
-  "control_00015": {
-    "enable_password": "0123456789",
-    "user_name": "admin",
-    "user_password": "0123456789"
-  },
-  "control_00017": {
-    "local_admin": "breakglass_admin",
-    "strong_password": "0123456789",
-    "blocked_time": 120,
-    "attempts_number": 3,
-    "attempts_time": 60,
-    "login_delay": 5,
-    "password_length": 10
-  }
+    "control_00001": {
+        "hostname": "ACME_USA_RT_INT_GOLDEN_01"
+    },
+    "control_00002": {
+        "company_name": "acme.com"
+    },
+    "control_00003": {
+        "tacacs_group": "ACME_TACACS_SERVER_GROUP"
+    },
+    "control_00004": {
+        "tacacs_servers": [
+            {
+                "name": "ACME_TACACS_01",
+                "address": "192.168.100.100",
+                "key": "0123456789",
+                "timeout": 10
+            },
+            {
+                "name": "ACME_TACACS_02",
+                "address": "192.168.100.101",
+                "key": "0123456789",
+                "timeout": 10
+            }
+        ],
+        "tacacs_group_name": "ACME_TACACS_SERVER_GROUP",
+        "source_interface": "Loopback0"
+    },
+    "control_00005": {
+        "user": "admin_bckp",
+        "privilege_level": 15,
+        "password": "0123456789",
+        "secret_psswd": "0123456789"
+    },
+    "control_00006": {
+        "hostname": "ACME_USA_RT_INT_GOLDEN_01",
+        "domain_name": "acme.com",
+        "ssh_version": 2,
+        "ssh_timeout": 60,
+        "ssh_auth_retries": 3
+    },
+    "control_00008": {
+        "vty_line_numbers": "0 15"
+    },
+    "control_00009": {
+        "ntp_ip_address": "10.10.10.100",
+        "secondary_ntp_ip_address": "20.20.20.100",
+        "ntp_key_id": 1,
+        "ntp_key_value": "0123456789"
+    },
+    "control_00010": {
+        "ip_syslog_server": "30.30.30.100",
+        "syslog_interface": "Loopback0"
+    },
+    "control_00011": {
+        "group_name": "acme_snmp_grp01",
+        "user_name": "acme_snmp_user",
+        "auth_password": "0123456789",
+        "priv_password": "9876543210",
+        "snmp_server_ip": "40.40.40.100"
+    },
+    "control_00012": {
+        "message_of_the_day": "Este es mi banner hecho en el JSON a mano."
+    },
+    "control_00013": {
+        "minimum_length_number": 10
+    },
+    "control_00014": {
+        "console_password": "0123456789",
+        "vty_password": "0123456789",
+        "start_line_number": 0,
+        "end_line_number": 15,
+        "minutes": 10,
+        "seconds": 0,
+        "allowed_protocols": "ssh",
+        "vty_acl_name": "ACME_VTY_MGMT_ACL"
+    },
+    "control_00015": {
+        "user_name": "admin",
+        "user_password": "0123456789"
+    },
+    "control_00017": {
+        "local_admin": "breakglass_admin",
+        "strong_password": "0123456789",
+        "blocked_time": 120,
+        "attempts_number": 3,
+        "attempts_time": 60,
+        "login_delay": 5,
+        "password_length": 10
+    }
 }

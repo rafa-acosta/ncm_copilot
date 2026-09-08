@@ -185,8 +185,19 @@ class ControlEvaluator:
         tacacs_blocks = device.blocks(r"^tacacs server\s")
         if len(tacacs_blocks) < 2:
             failures.append("Fewer than two 'tacacs server' definitions found.")
+
+        # Golden addresses are matched positionally (1st tacacs server block to
+        # 1st, 2nd to 2nd) since server names themselves aren't required to
+        # match golden's - only compared literally when golden gives a real IP
+        # rather than a <tacacs_server_N_ip> placeholder (placeholder = "must
+        # exist and be internally consistent", not "must equal this").
+        golden_addresses = []
+        for gblock in golden.blocks(r"^tacacs server\s"):
+            gaddr_line = next((c for c in gblock[1:] if c.startswith("address ipv4")), None)
+            golden_addresses.append(gaddr_line.split()[-1] if gaddr_line else None)
+
         addresses_seen: dict[str, str] = {}
-        for block in tacacs_blocks:
+        for idx, block in enumerate(tacacs_blocks):
             parent, children = block[0], block[1:]
             address_line = next((c for c in children if c.startswith("address ipv4")), None)
             if not address_line:
@@ -201,6 +212,12 @@ class ControlEvaluator:
                     )
                 else:
                     addresses_seen[address] = parent
+                expected_address = golden_addresses[idx] if idx < len(golden_addresses) else None
+                if expected_address and not re.match(r"^<.*>$", expected_address) and address != expected_address:
+                    failures.append(
+                        f"'{parent}': address '{address}' does not match the corporate "
+                        f"TACACS server address '{expected_address}'."
+                    )
             if not any(re.match(r"key \d", c) for c in children):
                 failures.append(f"'{parent}': no 'key' command found.")
             if not any(c.startswith("timeout") for c in children):
