@@ -387,6 +387,50 @@ def test_copp_present_passes_that_condition():
     assert result.status == STATUS_PASS
 
 
+# ---- control_00007: Global password encryption -------------------------------
+
+def test_global_password_encryption_present_passes():
+    device = "\n".join(
+        [
+            "key config-key password-encrypt 0123456789",
+            "password encryption aes",
+        ]
+    )
+    result = evaluate("control_00007", device)
+    assert result.status == STATUS_PASS
+
+
+def test_global_password_encryption_missing_key_fails():
+    result = evaluate("control_00007", "password encryption aes\n")
+    assert result.status == STATUS_FAIL
+    assert any("password-encrypt" in d for d in result.details)
+
+
+def test_global_password_encryption_missing_aes_fails():
+    result = evaluate("control_00007", "key config-key password-encrypt 0123456789\n")
+    assert result.status == STATUS_FAIL
+    assert any("password encryption aes" in d for d in result.details)
+
+
+# ---- control_00008: ACL for VTY -----------------------------------------------
+
+def test_acl_for_vty_present_passes():
+    device = "\n".join(
+        [
+            "ip access-list extended ACME_VTY_MGMT_ACL",
+            " permit ip any any",
+        ]
+    )
+    result = evaluate("control_00008", device)
+    assert result.status == STATUS_PASS
+
+
+def test_acl_for_vty_missing_fails():
+    result = evaluate("control_00008", "hostname ACME_USA_ROUTER_INTERNET_BLN_01\n")
+    assert result.status == STATUS_FAIL
+    assert any("ip access-list extended" in d for d in result.details)
+
+
 # ---- exceptions and manual review -------------------------------------------
 
 def test_exception_overrides_fail_status():

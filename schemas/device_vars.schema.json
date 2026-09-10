@@ -63,9 +63,14 @@
       },
       "additionalProperties": false
     },
+    "control_00007": {
+      "type": "object",
+      "properties": { "device_master_key": { "type": "string", "minLength": 1 } },
+      "additionalProperties": false
+    },
     "control_00008": {
       "type": "object",
-      "properties": { "vty_line_numbers": { "type": "string", "minLength": 1 } },
+      "properties": { "acl_name": { "type": "string", "minLength": 1 } },
       "additionalProperties": false
     },
     "control_00009": {

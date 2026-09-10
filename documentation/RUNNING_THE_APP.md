@@ -58,12 +58,11 @@ Audits one or more device configs against a golden config baseline, using `contr
                                 output-dir/<timestamp>/ subfolder (never overwritten)
                                 plus a refreshed output-dir/latest/ mirror.  [required]
 --formats TEXT                 Comma-separated: html, pdf, json.        [default: html,pdf]
---priority-only                Limit evaluation to control_00001-control_00015.
 --exceptions FILE               Optional YAML file mapping control_id -> exception reason.
 --help
 ```
 
-Exactly one of `--device-config` / `--device-config-dir` must be given, or the tool exits with a usage error.
+Exactly one of `--device-config` / `--device-config-dir` must be given, or the tool exits with a usage error. Only control_00001-control_00015 are evaluated - `controls.yaml` also defines control_00016-00018, but they're unconditionally excluded in this version (see `GLOSSARY.md`'s "Active controls" entry). There's no flag to opt into evaluating them; a run either evaluates 1-15 or nothing.
 
 ### Scenario: single device, HTML + PDF report
 
@@ -101,10 +100,6 @@ python main.py \
 ```
 Every `*.txt` file directly inside `./device_configs/` is audited against the same golden config. **Output:** `reports/<timestamp>/<device_stem>/report.html` and `.json` per device, plus one `reports/<timestamp>/fleet_report.html` summarizing all devices (worst-compliance-first, with a "most common failures across the fleet" table) — and `reports/latest/` refreshed to mirror all of it. Console prints one `<name>: N controls, M FAIL` line per device, then `Audited N device(s): M total FAIL across the fleet.` **Exit code:** `1` if any device has any FAIL.
 
-### Scenario: only the priority controls (00001–00015)
-
-Add `--priority-only` to either command above. Controls 00016–00018 (policy-checklist controls without single deterministic commands) are excluded.
-
 ### Scenario: granting an exception instead of a hard FAIL
 
 Create a YAML file mapping control IDs to a reason:
@@ -138,11 +133,11 @@ Renders `controls.yaml` + a `device_vars.json` into a `golden_config.txt` — th
 --controls FILE     Path to controls.yaml.                                [required]
 --device-vars FILE  Path to device_vars.json.                             [required]
 --output FILE       Output path.                       [default: golden_config.txt]
---priority-only     Render only control_00001-control_00015.
 --order FILE        Render-order YAML.                  [default: render_order.yaml]
 --strict             Abort and list every missing variable, write nothing.
 --help
 ```
+Renders control_00001-control_00015 only - `render_order.yaml` also lists control_00016-00018, but they're unconditionally excluded in this version.
 
 ### Scenario: normal render (non-strict / "write mode")
 

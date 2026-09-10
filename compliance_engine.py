@@ -35,8 +35,11 @@ STATUS_FAIL = "FAIL"
 STATUS_EXCEPTION = "EXCEPTION"
 STATUS_MANUAL_REVIEW = "MANUAL_REVIEW"
 
-# control_00007 does not exist in the source document (see CLAUDE.md section 11).
-PRIORITY_CONTROL_IDS = {f"control_{i:05d}" for i in (*range(1, 7), *range(8, 16))}
+# controls.yaml defines control_00001-00018, but only 1-15 are active for this
+# version - 16-18 stay defined for future use but are filtered out unconditionally
+# wherever this is used (main.py, golden_config_builder.py), never evaluated,
+# scored, or rendered by default (see CLAUDE.md section 11).
+ACTIVE_CONTROL_IDS = {f"control_{i:05d}" for i in range(1, 16)}
 
 _WEAK_SECRET_TYPES = {"0", "4", "5", "7"}
 
@@ -279,24 +282,21 @@ class ControlEvaluator:
             )
         return failures
 
-    def _check_control_00008(self, device: ConfigTree, golden: ConfigTree, control: dict) -> list[str]:
+    def _check_control_00007(self, device: ConfigTree, golden: ConfigTree, control: dict) -> list[str]:
         failures = []
-        vty_blocks = device.blocks(r"^line vty\s")
-        if not vty_blocks:
-            return ["No 'line vty' configuration found."]
-        for block in vty_blocks:
-            parent, children = block[0], block[1:]
-            transport_lines = [c for c in children if c.startswith("transport input")]
-            if not transport_lines:
-                failures.append(f"'{parent}': 'transport input ssh' command is missing.")
-                continue
-            for line in transport_lines:
-                protocols = line.split()[2:]
-                if "telnet" in protocols or "all" in protocols:
-                    failures.append(f"'{parent}': Telnet is enabled ('{line}').")
-                if "ssh" not in protocols:
-                    failures.append(f"'{parent}': SSH is not enabled ('{line}').")
+        if not device.exists(r"^key config-key password-encrypt\s+\S+"):
+            failures.append("'key config-key password-encrypt <device_master_key>' is missing.")
+        if not device.exists(r"^password encryption aes"):
+            failures.append("'password encryption aes' is missing.")
         return failures
+
+    def _check_control_00008(self, device: ConfigTree, golden: ConfigTree, control: dict) -> list[str]:
+        # Existence-only per spec: whether the ACL is actually bound to the VTY
+        # lines and restrictive rather than permissive is control_00014's job
+        # (it separately validates 'access-class' binding and ACL content).
+        if not device.exists(r"^ip access-list extended\s+\S+"):
+            return ["No 'ip access-list extended' block found in the running configuration."]
+        return []
 
     def _check_control_00009(self, device: ConfigTree, golden: ConfigTree, control: dict) -> list[str]:
         failures = []

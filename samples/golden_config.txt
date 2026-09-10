@@ -17,6 +17,9 @@ security passwords min-length 10
 !
 enable secret <ENABLE_SECRET>
 !
+key config-key password-encrypt <DEVICE_MASTER_KEY>
+password encryption aes
+!
 aaa new-model
 !
 aaa group server tacacs+ ACME_TACACS_SERVER_GROUP

@@ -62,8 +62,7 @@ The Golden Config Creator's job is: **for every control, substitute each `<varia
     "ssh_auth_retries": 3
   },
   "control_00008": {
-    "vty_line_numbers": "0 15",
-    "vty_acl_name": "VTY_MGMT_ACL"
+    "acl_name": "VTY_MGMT_ACL"
   },
   "control_00009": {
     "ntp_ip_address": "10.10.10.100",
@@ -116,7 +115,7 @@ The Golden Config Creator's job is: **for every control, substitute each `<varia
 
 Note: `control_00016` and `control_00018` (Mandatory Commands / Prohibited Commands) have no `command_template`/`variables` in the source doc — they are policy checklists, not renderable blocks. Skip them in the renderer; leave a `!` comment placeholder in the output noting they must be manually verified against the corporate command blacklist/whitelist.
 
-Note: `control_00007` is a **joker/wildcard control** — reserved in the source doc for a future, not-yet-defined command. All fields are null/empty except a placeholder `config_example`. Skip it in the renderer by default (treat as inactive) unless/until a real `command_template` is defined for it.
+Note: `control_00007` **is defined** (superseding the note this spec originally had about it being a reserved/joker control) — see §12's implementation note below.
 
 **Task 2:** Write `schemas/device_vars.schema.json` (JSON Schema) to validate `device_vars.json` at load time. Fail fast with a clear error naming the missing control/variable if validation fails.
 
@@ -134,9 +133,9 @@ class GoldenConfigBuilder:
         substituting <variable> tokens with values from device_vars.json.
         Prefix the block with a '!' comment header: '! control_00001 - Hostname'."""
 
-    def build(self, priority_only: bool = False) -> str:
-        """Render all controls (or only control_00001-00015 if priority_only=True)
-        in a fixed, logical order (see §5) and concatenate into the final config text."""
+    def build(self) -> str:
+        """Render control_00001-00015 (see §5's ordering, and §12's
+        ACTIVE_CONTROL_IDS note) and concatenate into the final config text."""
 
     def save(self, output_path: str = "golden_config.txt"):
         """Write the rendered result to disk."""
@@ -155,21 +154,23 @@ Render blocks in this fixed sequence (matches typical IOS-XE config build order 
 1. control_00001 – Hostname
 2. control_00002 – Domain
 3. control_00013 – Passwords (global policy, min-length + encryption)
-4. control_00003 – AAA
-5. control_00004 – TACACS+
-6. control_00005 – Local and emergency users
-7. control_00015 – Basic Security (enable secret, admin user)
-8. control_00006 – SSH
-9. control_00008 – Telnet Blocking / VTY transport
-10. control_00014 – VTY & Console Lines
-11. control_00009 – NTP
-12. control_00010 – Syslog
-13. control_00011 – SNMP
-14. control_00012 – Banners
-15. control_00017 – Recommended Commands (brute-force protection, scrypt default)
-16. control_00016 – Mandatory Commands (comment placeholder only)
-17. control_00018 – Prohibited Commands (comment placeholder only)
+4. control_00007 – Global password encryption (protects the TACACS/routing keys below)
+5. control_00003 – AAA
+6. control_00004 – TACACS+
+7. control_00005 – Local and emergency users
+8. control_00015 – Local user and enable secret (admin user)
+9. control_00006 – SSH
+10. control_00008 – ACL for VTY
+11. control_00014 – VTY & Console Lines
+12. control_00009 – NTP
+13. control_00010 – Syslog
+14. control_00011 – SNMP
+15. control_00012 – Banners
+16. control_00017 – Recommended Commands (defined, inactive by default)
+17. control_00016 – Mandatory Commands (defined, inactive by default)
+18. control_00018 – Prohibited Commands (defined, inactive by default)
 ```
+Only 1-15 (control_00001-00015) render by default - see §12's `ACTIVE_CONTROL_IDS` note.
 
 **Task 4:** Make this order configurable via a `render_order.yaml` (or a constant list in code) rather than hardcoded inline, so it can be adjusted per device role later (edge router / access switch / core switch variants).
 
@@ -182,7 +183,6 @@ python main.py \
   --controls controls.yaml \
   --device-vars device_vars.json \
   --output golden_config.txt \
-  [--priority-only]        # render only control_00001-00015
   [--order render_order.yaml]
   [--strict]                # fail if any required variable is missing (default: warn + insert <MISSING:var> marker)
 ```
@@ -271,5 +271,6 @@ This tool was built into the same repo as the Compliance Checker (`ncm_copilot`)
 - **`device_vars.json` uses `controls.yaml`'s actual variable names**, not this spec's illustrative example, where they differ (e.g. `secret_psswd` rather than `enable_secret` for control_00005) — per section 11's own instruction that `controls.yaml` is the naming source of truth.
 - **control_00016 and control_00018 are hardcoded to always render as `! MANUAL REVIEW REQUIRED` placeholders**, even though `controls.yaml` happens to carry a real `command_template` for control_00016 (added there for the Compliance Checker's own CoPP evaluation) — per section 11's explicit instruction that these two stay checklist-only and are never auto-rendered.
 - **Required substitution variables are extracted by scanning each `command_template` for `<word>` tokens directly**, not read from the `variables` metadata field — several controls' `variables` lists include documentation-only names that never appear in the template itself (e.g. control_00001 lists `company_name/country/type/function/site/device_number` as naming-convention documentation, but the template only contains `<hostname>`), which would otherwise wrongly demand values the renderer never substitutes.
+- **control_00007 is no longer a "joker/wildcard" control** (§3's note below is superseded) — a later spec revision defined it for real (Global password encryption), so it renders normally like any other control now. Separately, **`--priority-only` was removed** from both this tool's CLI and the Compliance Checker's — `build()` unconditionally filters to `compliance_engine.ACTIVE_CONTROL_IDS` (control_00001-00015) now, so there's no longer an "everything including 16-18" mode to opt out of. control_00008 (ACL for VTY) also stopped being a `control_00014`-subsumed pointer comment — it's a distinct control now (existence-only ACL check) and renders its own real block.
 
 See `CLAUDE.md` for the Compliance Checker this tool's output feeds into.

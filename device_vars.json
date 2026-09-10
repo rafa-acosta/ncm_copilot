@@ -39,8 +39,11 @@
         "ssh_timeout": 60,
         "ssh_auth_retries": 3
     },
+    "control_00007": {
+        "device_master_key": "0123456789"
+    },
     "control_00008": {
-        "vty_line_numbers": "0 15"
+        "acl_name": "ACME_VTY_MGMT_ACL"
     },
     "control_00009": {
         "ntp_ip_address": "10.10.10.100",
@@ -76,6 +79,7 @@
         "vty_acl_name": "ACME_VTY_MGMT_ACL"
     },
     "control_00015": {
+        "enable_password": "0123456789",
         "user_name": "admin",
         "user_password": "0123456789"
     },

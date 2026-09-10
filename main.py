@@ -11,8 +11,12 @@ Single-device usage:
         --controls controls.yaml \\
         --output-dir ./reports \\
         --formats html,pdf \\
-        [--priority-only] \\
         [--exceptions exceptions.yaml]
+
+Evaluates control_00001-control_00015 only - controls.yaml also defines
+control_00016-00018, but they're excluded unconditionally (see
+compliance_engine.ACTIVE_CONTROL_IDS) and never evaluated, scored, or
+reported in this version.
 
 Batch usage (audit every *.txt config in a folder against the same golden
 config, plus one fleet-level summary report):
@@ -31,7 +35,7 @@ from pathlib import Path
 import click
 import yaml
 
-from compliance_engine import PRIORITY_CONTROL_IDS, ControlEvaluator, ControlResult
+from compliance_engine import ACTIVE_CONTROL_IDS, ControlEvaluator, ControlResult
 from report_generator import render_fleet_html, render_html, render_json, render_pdf
 from run_archive import new_run_dir, refresh_latest
 
@@ -116,10 +120,6 @@ def _evaluate_device(
     help="Comma-separated output formats to generate: html, pdf, json.",
 )
 @click.option(
-    "--priority-only", is_flag=True, default=False,
-    help="Limit evaluation to control_00001-control_00015.",
-)
-@click.option(
     "--exceptions", "exceptions_path", default=None,
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
     help="Optional YAML file mapping control_id -> exception reason for this audit run.",
@@ -131,7 +131,6 @@ def main(
     controls_path: Path,
     output_dir: Path,
     formats: str,
-    priority_only: bool,
     exceptions_path: Path | None,
 ) -> None:
     """Audit one or more IOS-XE device configurations against a golden config baseline."""
@@ -139,11 +138,8 @@ def main(
         raise click.UsageError("Provide exactly one of --device-config or --device-config-dir.")
 
     golden_config = golden_config_path.read_text(encoding="utf-8")
-    controls = load_controls(controls_path)
+    controls = [c for c in load_controls(controls_path) if c["control_id"] in ACTIVE_CONTROL_IDS]
     exceptions = load_exceptions(exceptions_path)
-
-    if priority_only:
-        controls = [c for c in controls if c["control_id"] in PRIORITY_CONTROL_IDS]
 
     requested_formats = {f.strip().lower() for f in formats.split(",") if f.strip()}
     unknown = requested_formats - {"html", "pdf", "json"}

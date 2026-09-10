@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from compliance_engine import PRIORITY_CONTROL_IDS
+from compliance_engine import ACTIVE_CONTROL_IDS
 from config_parser import ConfigTree
 from golden_config_builder import GoldenConfigBuilder
 
@@ -34,11 +34,12 @@ def test_full_build_has_no_missing_markers_with_complete_sample_vars():
 def test_full_build_renders_expected_content():
     builder = _builder()
     text = builder.build()
-    assert "hostname ACME_USA_RT_INT_BLN_01" in text
     assert "aaa new-model" in text
     assert "tacacs server ACME_TACACS_01" in text
     assert "tacacs server ACME_TACACS_02" in text
-    assert "MANUAL REVIEW REQUIRED" in text  # banners + 16/18
+    assert "key config-key password-encrypt" in text  # control_00007
+    assert "ip access-list extended" in text  # control_00008
+    assert "MANUAL REVIEW REQUIRED" in text  # banners
 
 
 def test_full_build_follows_render_order():
@@ -51,13 +52,16 @@ def test_full_build_follows_render_order():
     assert idx_hostname < idx_domain < idx_passwords < idx_aaa
 
 
-def test_priority_only_excludes_16_17_18():
+def test_default_build_excludes_16_17_18():
+    # control_00016-00018 stay defined in controls.yaml/render_order.yaml for
+    # future use, but a default build() unconditionally excludes them now -
+    # there's no --priority-only flag to opt into this anymore, it's the only mode.
     builder = _builder()
-    text = builder.build(priority_only=True)
+    text = builder.build()
     assert "control_00016" not in text
     assert "control_00017" not in text
     assert "control_00018" not in text
-    for cid in PRIORITY_CONTROL_IDS:
+    for cid in ACTIVE_CONTROL_IDS:
         assert cid in text
 
 
@@ -92,20 +96,31 @@ def test_line_vty_appears_exactly_once_with_full_settings():
 def test_self_evaluation_against_compliance_checker():
     # The strongest interoperability check: run the Compliance Checker's own
     # ControlEvaluator with the generated golden config as BOTH the device and
-    # golden config. A self-consistent baseline should PASS itself everywhere
-    # except two known, deliberate gaps:
+    # golden config. This loop evaluates EVERY control in controls.yaml
+    # (00001-00018 raw from the YAML file, not filtered to ACTIVE_CONTROL_IDS),
+    # even though build() only ever renders 00001-00015 into `golden` - so
+    # 00016/00017/00018 are expected non-passes here purely because their
+    # content was never rendered (they're inactive-by-design in this version),
+    # not because of any control_00001-00015 regression:
+    #  - control_00008 (ACL for VTY) now renders its own real
+    #    'ip access-list extended ACME_VTY_MGMT_ACL / permit ip any any' block
+    #    (existence-only check -> PASS), which in turn means control_00014's
+    #    access-class binding now resolves to a real (if permissive) ACL -
+    #    so control_00014 FAILs for a more specific reason than before
+    #    ("ACL is permissive" instead of "ACL not found").
     #  - control_00016's mandatory-command items (e.g. 'no ip http server')
-    #    are never auto-rendered (GOLDEN_CONFIG_CREATOR.md section 12); only its
-    #    CoPP line renders, so the Compliance Checker's fuller check still fails.
-    # Note: this also does not define the ACL content that control_00014's
-    # 'access-class' references by name - no control in controls.yaml renders
-    # 'ip access-list' bodies - so control_00014 is expected to FAIL here too.
-    # That's a known scope gap, not asserted as a silent pass.
-    # control_00012 (Banners) is NOT in this gap list: its golden-config
-    # rendering is a MANUAL REVIEW REQUIRED comment block wrapped around a
-    # real, uncommented 'banner motd' line (see golden_config_builder.py's
-    # _manual_review_block), and Tool 1's checker is presence-only - so it
-    # correctly self-evaluates as PASS here.
+    #    are never auto-rendered (GOLDEN_CONFIG_CREATOR.md section 12) even
+    #    when 16 WAS in the active set, and it's excluded from the active set
+    #    entirely now - so it FAILs on every count.
+    #  - control_00017 (Recommended Commands) is well-formed and rendered fully
+    #    by the generic engine, but is excluded from the active set by default
+    #    in this version, so none of its content (login block-for/delay, etc.)
+    #    appears in `golden` at all - it FAILs here for that reason alone.
+    #  - control_00018 (Prohibited Commands) checks for the ABSENCE of
+    #    prohibited command strings, which doesn't depend on being rendered -
+    #    it still correctly PASSes.
+    # control_00007 (new) and control_00012 (Banners, presence-only checker)
+    # both correctly self-evaluate as PASS.
     import yaml as _yaml
 
     from compliance_engine import STATUS_FAIL, STATUS_PASS, ControlEvaluator
@@ -116,8 +131,9 @@ def test_self_evaluation_against_compliance_checker():
     evaluator = ControlEvaluator()
 
     expected_non_pass = {
-        "control_00014": STATUS_FAIL,  # references an ACL whose body is never rendered
-        "control_00016": STATUS_FAIL,  # mandatory-command items deliberately not auto-rendered
+        "control_00014": STATUS_FAIL,  # ACL exists (via control_00008) but is permissive
+        "control_00016": STATUS_FAIL,  # inactive by default - never rendered
+        "control_00017": STATUS_FAIL,  # inactive by default - never rendered
     }
     for control in controls:
         result = evaluator.evaluate_control(control, golden, golden)

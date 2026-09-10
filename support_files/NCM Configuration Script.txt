@@ -17,19 +17,20 @@ password encryption aes
 
 ! control_00005 - Local and emergency users
 username admin_bckp privilege 15 algorithm-type scrypt secret 0123456789
-enable secret 0123456789
+
 
 ! control_00015 - admin user
 username admin privilege 15 secret 0123456789
+enable secret 0123456789
 
 ! control_00004 - TACACS
 aaa new-model
 tacacs server ACME_TACACS_01
- address ipv4 192.168.100.100
+ address ipv4 192.168.100.101
  key 0 0123456789
  timeout 10
 tacacs server ACME_TACACS_02
- address ipv4 192.168.100.101
+ address ipv4 192.168.100.102
  key 0 0123456789
  timeout 10
 aaa group server tacacs+ ACME_TACACS_SERVER_GROUP
@@ -72,18 +73,25 @@ ip access-list extended ACME_VTY_MGMT_ACL
 ! control_00014 - VTY Lines
 line con 0
  password 0123456789
- login authentication default
- exec-timeout 10 0
  logging synchronous
- exit
-line vty 0 15
+line aux 0
+line vty 0 4
+ session-timeout 10 
  access-class ACME_VTY_MGMT_ACL in
  password 0123456789
- login authentication default
- exec-timeout 10 0
- transport input ssh
  logging synchronous
- exit
+ exec prompt timestamp
+ transport input ssh
+ transport output ssh
+line vty 5 15
+ session-timeout 10 
+ access-class ACME_VTY_MGMT_ACL in
+ password 0123456789
+ logging synchronous
+ exec prompt timestamp
+ transport input ssh
+ transport output ssh
+
  
 ! control_00009 - NTP
 ntp authentication-key 1 md5 0123456789

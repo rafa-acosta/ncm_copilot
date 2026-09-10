@@ -101,20 +101,29 @@ def test_control_00018_always_renders_as_manual_review(tmp_path):
     assert "MANUAL REVIEW REQUIRED" in result.text
 
 
-def test_control_00008_is_subsumed_by_vty_lines_not_duplicated(tmp_path):
-    # control_00008 and control_00014 both target 'line vty' - rendering both
-    # independently would concatenate two separate 'line vty' stanzas into one
-    # file, which real IOS running-config never does and which broke
-    # self-consistency parsing (see test_golden_config_build_full.py).
-    builder = _builder({}, tmp_path)
+def test_control_00008_renders_its_own_acl_block(tmp_path):
+    # control_00008 (ACL for VTY) is a standalone existence-only check now - it
+    # no longer targets 'line vty' at all, so it's no longer subsumed by
+    # control_00014 and renders its own real ACL block via the generic engine.
+    builder = _builder({"control_00008": {"acl_name": "ACME_VTY_MGMT_ACL"}}, tmp_path)
     result = builder.render_control("control_00008")
+    assert "ip access-list extended ACME_VTY_MGMT_ACL" in result.text
+    assert "permit ip any any" in result.text
     assert "line vty" not in result.text
-    assert "control_00014" in result.text
+    assert result.missing == []
 
 
-def test_control_00007_is_absent_and_skipped(tmp_path):
-    builder = _builder({}, tmp_path)
-    assert builder.render_control("control_00007") is None
+def test_control_00007_renders_normally(tmp_path):
+    # control_00007 (Global password encryption) used to be an intentional gap
+    # in controls.yaml (source doc jump 00006 -> 00008); it's a real, fully
+    # renderable control now, substituted via the generic <word> engine like
+    # any other control.
+    builder = _builder({"control_00007": {"device_master_key": "test_master_key"}}, tmp_path)
+    result = builder.render_control("control_00007")
+    assert result is not None
+    assert "key config-key password-encrypt test_master_key" in result.text
+    assert "password encryption aes" in result.text
+    assert result.missing == []
 
 
 def test_ssh_render_drops_destructive_zeroize_line(tmp_path):

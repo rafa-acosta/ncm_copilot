@@ -9,9 +9,12 @@ Usage:
         --controls controls.yaml \\
         --device-vars device_vars.json \\
         --output golden_config.txt \\
-        [--priority-only] \\
         [--order render_order.yaml] \\
         [--strict]
+
+Renders control_00001-control_00015 only - render_order.yaml also lists
+control_00016-00018, but they're excluded unconditionally (see
+compliance_engine.ACTIVE_CONTROL_IDS) and never rendered in this version.
 """
 
 from __future__ import annotations
@@ -40,10 +43,6 @@ from golden_config_builder import GoldenConfigBuilder
     help="Path to write the rendered golden config to.",
 )
 @click.option(
-    "--priority-only", is_flag=True, default=False,
-    help="Render only control_00001-control_00015.",
-)
-@click.option(
     "--order", "order_path", default="render_order.yaml", show_default=True,
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
     help="Path to the render-order YAML file.",
@@ -56,7 +55,6 @@ def main(
     controls_path: Path,
     device_vars_path: Path,
     output_path: Path,
-    priority_only: bool,
     order_path: Path,
     strict: bool,
 ) -> None:
@@ -68,7 +66,7 @@ def main(
         strict=strict,
     )
 
-    text = builder.build(priority_only=priority_only)
+    text = builder.build()
 
     if builder.missing:
         click.echo(f"Missing {len(builder.missing)} variable(s):")

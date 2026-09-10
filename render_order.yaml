@@ -1,24 +1,26 @@
 # Control rendering order for the Golden Config Creator (golden_config_builder.py).
 #
 # Matches typical IOS-XE config build order and GOLDEN_CONFIG_CREATOR.md section 5.
-# control_00007 is intentionally absent (no entry in controls.yaml - see CLAUDE.md
-# section 11 / GOLDEN_CONFIG_CREATOR.md section 12). --priority-only filters this list
-# down to compliance_engine.PRIORITY_CONTROL_IDS (control_00001-00006, 00008-00015) at
-# render time; it is not re-ordered for that filter.
+# All 18 controls are listed here, but build() unconditionally filters this list
+# down to compliance_engine.ACTIVE_CONTROL_IDS (control_00001-00015) at render
+# time - control_00016-00018 stay listed for future use but are never rendered by
+# default; it is not re-ordered for that filter. Use render_control(control_id)
+# directly to render one of the inactive controls by hand.
 - control_00001  # Hostname
 - control_00002  # Domain
 - control_00013  # Passwords (global policy, min-length + encryption)
+- control_00007  # Global password encryption (protects the TACACS/routing keys below)
 - control_00003  # AAA
 - control_00004  # TACACS+
 - control_00005  # Local and emergency users
-- control_00015  # Basic Security (enable secret, admin user)
+- control_00015  # Local user and enable secret (admin user)
 - control_00006  # SSH
-- control_00008  # Telnet Blocking / VTY transport
+- control_00008  # ACL for VTY
 - control_00014  # VTY & Console Lines
 - control_00009  # NTP
 - control_00010  # Syslog
 - control_00011  # SNMP
 - control_00012  # Banners (manual review)
-- control_00017  # Recommended Commands
-- control_00016  # Mandatory Commands (manual review placeholder)
-- control_00018  # Prohibited Commands (manual review placeholder)
+- control_00017  # Recommended Commands (defined, inactive)
+- control_00016  # Mandatory Commands (defined, inactive)
+- control_00018  # Prohibited Commands (defined, inactive)

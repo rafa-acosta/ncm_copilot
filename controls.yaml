@@ -250,40 +250,62 @@
     ip ssh time-out 60
     ip ssh authentication-retries 3
 
-- control_id: control_00008
-  title: "Telnet Blocking"
+- control_id: control_00007
+  title: "Global password encryption"
   explanation: >
-    Restricts remote access to the SSH protocol only, blocking Telnet to prevent
-    sending credentials in clear text.
+    Defines a global AES-128 master key that securely encrypts sensitive passwords
+    (TACACS+, RADIUS, routing keys) into Type-6 format within the configuration
+    file, preventing them from being read even if a copy of the running-config is
+    obtained.
   command_template: |
-    line vty <vty_line_numbers>
-     transport input ssh
-     transport output ssh
+    key config-key password-encrypt <device_master_key>
+    password encryption aes
   variables:
-    - vty_line_numbers
+    - device_master_key
   not_compliance_conditions:
-    - "Telnet (port 23) is enabled for VTY lines"
-    - "'transport input ssh' command is missing on VTY lines"
+    - "The device master key ('key config-key password-encrypt') is not present"
+    - "'password encryption aes' is not enabled"
+  exceptions:
+    - "No exceptions identified for this control."
+  severity: High
+  risk: >
+    Without this command, TACACS+/RADIUS/routing keys fall back to weak Type-7
+    encoding or cleartext storage, trivially decodable if an attacker obtains
+    the running-config, compromising network infrastructure.
+  remediation: "Apply 'key config-key password-encrypt <device_master_key>' and 'password encryption aes' on the device."
+  evidence: "'key 6 <encrypted_string>' format on sensitive keys in the running configuration, and 'password encryption aes' present."
+  deterministic_validation: true
+  manual_review: false
+  config_example: |
+    key config-key password-encrypt 0123456789
+    password encryption aes
+
+- control_id: control_00008
+  title: "ACL for VTY"
+  explanation: >
+    Requires a named extended ACL to exist for scoping administrative access to
+    the VTY lines (see control_00014 for whether it's actually bound to the VTY
+    lines and restrictive rather than permissive).
+  command_template: |
+    ip access-list extended <acl_name>
+     permit ip any any
+  variables:
+    - acl_name
+  not_compliance_conditions:
+    - "ACL does not exist."
   exceptions:
     - "No specific exceptions identified for this control."
   severity: High
   risk: >
-    Allowing Telnet allows administrative credentials and data to be transmitted in
-    plain text, which can be captured by attackers on the network.
-  remediation: "Strictly limit transport input to SSH on all VTY lines."
-  evidence: "'transport input ssh' under 'line vty' in the running configuration."
+    Without an ACL scoping administrative access, the equipment is exposed to a
+    security breach from unrestricted management-plane reachability.
+  remediation: "Apply ACL configuration inside the VTY configuration module."
+  evidence: "'ip access-list extended' in the running configuration."
   deterministic_validation: true
   manual_review: false
   config_example: |
-    line vty 0 15
-     access-class VTY_ACL_NAME in
-     exec-timeout 10 0
-     transport input ssh
-     transport output ssh
-     logging synchronous
-     session-timeout 10
-     exec prompt timestamp
-     history size 20
+    ip access-list extended ACME_VTY_MGMT_ACL
+     permit ip any any
 
 - control_id: control_00009
   title: "NTP"
@@ -517,7 +539,7 @@
      history size 20
 
 - control_id: control_00015
-  title: "Basic Security"
+  title: "Local user and enable secret"
   explanation: >
     Establishes fundamental protection measures, such as the enable password and
     the creation of a local administrator with full privileges.

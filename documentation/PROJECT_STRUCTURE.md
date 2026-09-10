@@ -62,7 +62,7 @@ ncm_copilot/
 
 ```
                               ┌────────────────┐
-                              │  controls.yaml │   17 controls, each with:
+                              │  controls.yaml │   18 controls (15 active), each with:
                               │ (single source  │   command_template, variables,
                               │   of truth)     │   not_compliance_conditions,
                               └───────┬─────────┘   severity, risk, remediation,

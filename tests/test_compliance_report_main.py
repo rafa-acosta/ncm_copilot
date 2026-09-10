@@ -57,7 +57,7 @@ def test_cli_produces_md_and_pdf(tmp_path):
     assert result.exit_code == 0, result.output
     assert out_pdf.exists()
     assert (tmp_path / "out.md").exists()  # --out-md defaults to --out's stem + .md
-    assert "17 controls" in result.output
+    assert "15 controls" in result.output  # main.py now evaluates only control_00001-00015 by default
 
 
 def test_cli_default_output_archives_and_refreshes_latest(tmp_path, monkeypatch):

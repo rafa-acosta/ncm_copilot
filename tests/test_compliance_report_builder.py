@@ -131,11 +131,14 @@ def test_extract_risk_statement_llm_polish_still_rejects_bad_rewrite():
 
 # ---- bucket_findings: status handling -------------------------------------------
 
-def test_bucket_findings_all_17_controls_appear_in_appendix():
+def test_bucket_findings_all_18_controls_appear_in_appendix():
+    # _real_report()/_controls_by_id() evaluate every raw entry in controls.yaml
+    # (18, including 00016-00018) - the active-only filtering (ACTIVE_CONTROL_IDS)
+    # lives in main.py's CLI layer, not in ControlEvaluator itself.
     report = _real_report()
     controls_by_id = _controls_by_id()
     findings_detail, manual_review, appendix, counts = crb.bucket_findings(report, controls_by_id)
-    assert len(appendix) == 17
+    assert len(appendix) == 18
     assert {row.control_id for row in appendix} == set(controls_by_id)
 
 
@@ -225,8 +228,8 @@ def test_build_report_context_end_to_end(tmp_path):
     assert isinstance(ctx, ReportContext)
     assert ctx.device_name == "device_config"
     assert ctx.device_role == "edge-router"
-    assert len(ctx.appendix) == 17
-    assert ctx.compliance_pct == round(100 * ctx.counts["compliant"] / 17, 1)
+    assert len(ctx.appendix) == 18
+    assert ctx.compliance_pct == round(100 * ctx.counts["compliant"] / 18, 1)
 
 
 def test_build_report_context_audit_date_override(tmp_path):

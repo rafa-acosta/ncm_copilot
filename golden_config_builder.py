@@ -17,9 +17,10 @@ Design notes (see GOLDEN_CONFIG_CREATOR.md section 12 for the full rationale):
 - Missing values are tracked via a custom Jinja Undefined subclass that renders
   as `<MISSING:name>` and records the name, rather than raising or silently
   rendering blank - this is what powers --strict and the non-strict summary.
-- control_00008 renders a pointer comment instead of commands: it and
-  control_00014 both target the same 'line vty' stanza, and concatenating both
-  independently would duplicate it (see `_SUBSUMED_BY`).
+- `build()` only renders control_00001-00015 (see compliance_engine.ACTIVE_CONTROL_IDS).
+  control_00016-00018 stay defined in controls.yaml/render_order.yaml for future
+  use, but are unconditionally excluded from a default build; `render_control()`
+  can still render one directly if needed.
 """
 
 from __future__ import annotations
@@ -58,19 +59,11 @@ _LINES_DROPPED_ON_RENDER = {
     "control_00006": [r"^crypto key zeroize rsa\s*$"],
 }
 
-# control_00008 (Telnet Blocking) and control_00014 (VTY Lines) both target the same
-# 'line vty' stanza - control_00014's template already includes 'transport input ssh'
-# alongside access-class/login local/exec-timeout. Rendering both independently would
-# concatenate two separate 'line vty' stanzas into one file (real IOS running-config
-# only ever shows one), which broke self-consistency testing: ciscoconfparse2 treats
-# them as two distinct blocks, so the first (control_00008's, transport-only) shadows
-# the second's fuller settings when re-parsed. control_00008 renders a pointer comment
-# instead of commands; controls.yaml's command_template is untouched for the
-# Compliance Checker, which evaluates each control against a real device config
-# independently and never concatenates rendered output.
-_SUBSUMED_BY = {
-    "control_00008": "control_00014's VTY Lines block below (includes 'transport input ssh')",
-}
+# No controls are currently subsumed. control_00008 (ACL for VTY) used to render
+# a pointer comment to control_00014 (VTY Lines) when both covered the same VTY
+# transport-input concern; control_00008 now defines a standalone ACL block
+# (existence-only check, doesn't target 'line vty' at all) and renders normally.
+_SUBSUMED_BY: dict[str, str] = {}
 
 
 @dataclass
@@ -135,7 +128,7 @@ class GoldenConfigBuilder:
 
     def render_control(self, control_id: str) -> RenderedControl | None:
         """Render a single control's command block. Returns None if `control_id`
-        has no entry in controls.yaml (e.g. control_00007)."""
+        has no entry in controls.yaml (e.g. a typo, or a truly unknown ID)."""
         control = self.controls.get(control_id)
         if control is None:
             return None
@@ -239,15 +232,16 @@ class GoldenConfigBuilder:
         rendered = "\n".join(line for line in rendered.splitlines() if line.strip() != "")
         return rendered, missing
 
-    def build(self, priority_only: bool = False) -> str:
-        """Render every control in `self.order` (optionally filtered to the priority
-        range) and concatenate into the final config text. Populates `self.missing`."""
-        from compliance_engine import PRIORITY_CONTROL_IDS
+    def build(self) -> str:
+        """Render every control_00001-00015 control in `self.order` and concatenate
+        into the final config text. Populates `self.missing`. control_00016-00018
+        stay defined in controls.yaml/render_order.yaml for future use, but are
+        unconditionally excluded here (see compliance_engine.ACTIVE_CONTROL_IDS) -
+        use `render_control(control_id)` directly to render one of them by hand."""
+        from compliance_engine import ACTIVE_CONTROL_IDS
 
         self.missing = []
-        control_ids = self.order
-        if priority_only:
-            control_ids = [cid for cid in control_ids if cid in PRIORITY_CONTROL_IDS]
+        control_ids = [cid for cid in self.order if cid in ACTIVE_CONTROL_IDS]
 
         hostname = self.device_vars.get("control_00001", {}).get("hostname", "")
         header_lines = [
@@ -263,14 +257,14 @@ class GoldenConfigBuilder:
         for control_id in control_ids:
             rendered = self.render_control(control_id)
             if rendered is None:
-                continue  # not defined in controls.yaml (e.g. control_00007) - skip
+                continue  # not defined in controls.yaml - skip
             blocks.append(rendered.text.rstrip("\n"))
 
         return "\n".join(header_lines) + "\n\n".join(blocks) + "\n"
 
-    def save(self, output_path: str | Path = "golden_config.txt", priority_only: bool = False) -> str:
+    def save(self, output_path: str | Path = "golden_config.txt") -> str:
         """Render (see `build`) and write the result to `output_path`. Returns the text."""
-        text = self.build(priority_only=priority_only)
+        text = self.build()
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(text, encoding="utf-8")
