@@ -37,7 +37,6 @@ python main.py \
   --output-dir ./reports \
   --formats html,pdf
   
-02/09/2026
 
 python main.py \
   --device-config samples/perfect_config.txt \
@@ -47,11 +46,26 @@ python main.py \
   --formats html,pdf
   
   
-  
-  
 python main.py \
   --device-config samples/no_aaa_perfect_config.txt \
   --golden-config samples/perfect_config.txt \
   --controls controls.yaml \
   --output-dir ./reports \
   --formats html,pdf
+  
+  
+Golden config creator:
+
+python golden_config_main.py \
+  --controls controls.yaml \
+  --device-vars device_vars.json \
+  --output samples/golden_config_05_09_2026.txt
+  
+python main.py \
+  --device-config samples/no_aaa_perfect_config.txt \
+  --golden-config samples/golden_config_02_09_2026.txt \
+  --controls controls.yaml \
+  --priority-only \
+  --output-dir ./reports \
+  --formats html,pdf
+
