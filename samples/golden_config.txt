@@ -2,9 +2,10 @@
 ! ACME Corp - IOS-XE Golden Configuration Baseline
 ! <PLACEHOLDER> tokens mark values that must exist and be internally consistent
 ! on the audited device; they are NOT expected to literally match this file.
-! Non-placeholder values (domain, TACACS group/server names, syslog/NTP/SNMP
-! hosts, VTY ACL name) are shared corporate infrastructure values and ARE
-! expected to match literally.
+! Non-placeholder values (domain, AAA/TACACS group name, TACACS server names/
+! timeout, ACL name and full rule content, NTP server IPs, syslog host, SNMP
+! group/user/host, SSH version/timeout/retries) are shared corporate
+! infrastructure values and ARE expected to match literally.
 ! ============================================================================
 version 15.8
 service timestamps debug datetime msec
@@ -57,8 +58,26 @@ no ip http server
 no ip http secure-server
 !
 ip access-list extended ACME_VTY_MGMT_ACL
- remark Restrictive ACL - management subnet only
- permit tcp <MGMT_SUBNET> <MGMT_WILDCARD> any eq 22
+ remark ACME - Deny explicito a rangos de Cloudflare
+ deny ip any 173.245.48.0 0.0.15.255
+ deny ip any 103.21.244.0 0.0.3.255
+ deny ip any 103.22.200.0 0.0.3.255
+ deny ip any 103.31.4.0 0.0.3.255
+ deny ip any 141.101.64.0 0.0.63.255
+ deny ip any 108.162.192.0 0.0.63.255
+ deny ip any 190.93.240.0 0.0.15.255
+ deny ip any 188.114.96.0 0.0.15.255
+ deny ip any 197.234.240.0 0.0.3.255
+ deny ip any 198.41.128.0 0.0.127.255
+ deny ip any 162.158.0.0 0.1.255.255
+ deny ip any 104.16.0.0 0.7.255.255
+ deny ip any 104.24.0.0 0.3.255.255
+ deny ip any 172.64.0.0 0.7.255.255
+ deny ip any 131.0.72.0 0.0.3.255
+ remark ACME - Solo se permite trafico SSH
+ permit tcp any any eq 22
+ permit tcp any eq 22 any
+ remark ACME - Deny explicito de cualquier otro protocolo
  deny ip any any log
 !
 logging on
@@ -83,30 +102,33 @@ snmp-server enable traps
 ntp authentication-key 1 md5 <NTP_AUTH_KEY> 7
 ntp trusted-key 1
 ntp authenticate
-ntp server 10.10.10.100 prefer
-ntp server 20.20.20.100
+ntp server 10.10.10.100 key 1 prefer
+ntp server 20.20.20.100 key 1
 !
 banner motd $ <MESSAGE_OF_THE_DAY> $
 !
 control-plane
  service-policy input COPP_POLICY_ACME
 !
-! ============================================
-! ACL dummy - permite todo el tráfico (SOLO LAB/TESTING)
-! ============================================
-ip access-list extended ACME_VTY_MGMT_ACL
- remark ACME - PERMIT-ALL placeholder, replace before production
- permit ip any any
-!
-!
 line con 0
+ password <CONSOLE_PASSWORD>
  login local
  exec-timeout 10 0
  logging synchronous
  exit
-line vty 0 15
+line vty 0 4
  access-class ACME_VTY_MGMT_ACL in
- login local
+ password <VTY_PASSWORD>
+ login authentication default
+ exec-timeout 10 0
+ transport input ssh
+ transport output ssh
+ logging synchronous
+ exit
+line vty 5 15
+ access-class ACME_VTY_MGMT_ACL in
+ password <VTY_PASSWORD>
+ login authentication default
  exec-timeout 10 0
  transport input ssh
  transport output ssh

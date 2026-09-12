@@ -53,7 +53,6 @@ aaa group server tacacs+ ACME_TACACS_SERVER_GROUP
 
 ! control_00005 - Local and emergency users
 username admin_bckp privilege 15 algorithm-type scrypt secret 0123456789
-enable secret 0123456789
 
 ! control_00015 - Local user and enable secret
 enable secret 0123456789
@@ -68,9 +67,33 @@ ip ssh time-out 60
 ip ssh authentication-retries 3
 
 ! control_00008 - ACL for VTY
+! ============================================
+! ACL: Deny Cloudflare + Permitir solo SSH (in/out)
+! ============================================
 ip access-list extended ACME_VTY_MGMT_ACL
- permit ip any any
-
+ remark ACME - Deny explicito a rangos de Cloudflare
+ deny   ip any 173.245.48.0 0.0.15.255
+ deny   ip any 103.21.244.0 0.0.3.255
+ deny   ip any 103.22.200.0 0.0.3.255
+ deny   ip any 103.31.4.0 0.0.3.255
+ deny   ip any 141.101.64.0 0.0.63.255
+ deny   ip any 108.162.192.0 0.0.63.255
+ deny   ip any 190.93.240.0 0.0.15.255
+ deny   ip any 188.114.96.0 0.0.15.255
+ deny   ip any 197.234.240.0 0.0.3.255
+ deny   ip any 198.41.128.0 0.0.127.255
+ deny   ip any 162.158.0.0 0.1.255.255
+ deny   ip any 104.16.0.0 0.7.255.255
+ deny   ip any 104.24.0.0 0.3.255.255
+ deny   ip any 172.64.0.0 0.7.255.255
+ deny   ip any 131.0.72.0 0.0.3.255
+ remark ACME - Solo se permite trafico SSH
+ permit tcp any any eq 22
+ permit tcp any eq 22 any
+ remark ACME - Deny explicito de cualquier otro protocolo
+ deny   ip any any log
+!
+!
 ! control_00014 - VTY Lines
 line con 0
  password 0123456789
@@ -80,10 +103,10 @@ line con 0
  exit
 line vty 0 15
  access-class ACME_VTY_MGMT_ACL in
- password 0123456789
- login local
+ login authentication default
  exec-timeout 10 0
  transport input ssh
+ transport ouput ssh
  logging synchronous
  exit
 
@@ -91,8 +114,8 @@ line vty 0 15
 ntp authentication-key 1 md5 0123456789
 ntp trusted-key 1
 ntp authenticate
-ntp server 10.10.10.100 prefer
-ntp server 20.20.20.100
+ntp server 10.10.10.100 key 1 prefer
+ntp server 20.20.20.100 key 1
 
 ! control_00010 - Syslog
 logging on

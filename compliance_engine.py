@@ -7,12 +7,20 @@ consistency across N usernames) that a single regex-template engine can't
 express cleanly. Every checker returns a list of human-readable failure
 reasons; an empty list means the control is compliant.
 
-Golden-config values are used two ways, decided per control:
-  - shared infrastructure values (domain, TACACS group/server names, syslog
-    host/interface, VTY ACL name) must match the device literally.
-  - device-unique values (hostname parts, local usernames/passwords, banner
-    text) are checked for structural/policy correctness only, never
-    literal-compared against golden's example value.
+Golden-config values are used two ways, decided per control (per the source
+spec's per-control `Fixed_value` field - "yes" means the documented/golden
+value is the actual required value, not just a placeholder):
+  - shared infrastructure values (domain, AAA/TACACS group name, TACACS
+    server names/timeout, ACL name and full rule content, NTP server IPs,
+    syslog host, SNMP group/user/host) must match the device literally.
+  - device-unique values that remain structural/policy-only, never
+    literal-compared against golden's example value: hostname parts, local
+    passwords/secrets/keys, and banner text - see control_00012's own note
+    below for why `Fixed_value: yes` is deliberately NOT applied there.
+
+VTY lines use `login authentication default` (invoking the AAA method list
+control_00003 sets up); console keeps `login local` (a working fallback if
+TACACS is unreachable) - these are intentionally different, not a typo.
 
 A `_check_control_XXXXX` method, when one exists, always wins over the
 control's `manual_review` flag - `manual_review` is only a fallback for
@@ -178,6 +186,15 @@ class ControlEvaluator:
                 groups_found.add(match.group(1))
         if len(groups_found) > 1:
             failures.append(f"AAA commands reference inconsistent TACACS groups: {sorted(groups_found)}.")
+        elif groups_found:
+            group_name = next(iter(groups_found))
+            golden_line = golden.first_text(r"^aaa authentication login default group \S+ local")
+            golden_match = re.search(r"group (\S+)", golden_line) if golden_line else None
+            if golden_match and group_name != golden_match.group(1):
+                failures.append(
+                    f"AAA commands reference TACACS group '{group_name}', which does not match "
+                    f"the corporate group '{golden_match.group(1)}'."
+                )
         return failures
 
     def _check_control_00004(self, device: ConfigTree, golden: ConfigTree, control: dict) -> list[str]:
@@ -189,19 +206,31 @@ class ControlEvaluator:
         if len(tacacs_blocks) < 2:
             failures.append("Fewer than two 'tacacs server' definitions found.")
 
-        # Golden addresses are matched positionally (1st tacacs server block to
-        # 1st, 2nd to 2nd) since server names themselves aren't required to
-        # match golden's - only compared literally when golden gives a real IP
-        # rather than a <tacacs_server_N_ip> placeholder (placeholder = "must
-        # exist and be internally consistent", not "must equal this").
+        # Golden values are matched positionally (1st tacacs server block to
+        # 1st, 2nd to 2nd) since a device's own server names aren't required
+        # to match golden's independent of this - only compared literally
+        # when golden gives a real value rather than a <placeholder> (a
+        # placeholder means "must exist and be internally consistent", not
+        # "must equal this").
+        golden_names = []
         golden_addresses = []
+        golden_timeouts = []
         for gblock in golden.blocks(r"^tacacs server\s"):
+            golden_names.append(gblock[0].split()[-1])
             gaddr_line = next((c for c in gblock[1:] if c.startswith("address ipv4")), None)
             golden_addresses.append(gaddr_line.split()[-1] if gaddr_line else None)
+            gtimeout_line = next((c for c in gblock[1:] if c.startswith("timeout")), None)
+            golden_timeouts.append(gtimeout_line.split()[-1] if gtimeout_line else None)
 
         addresses_seen: dict[str, str] = {}
         for idx, block in enumerate(tacacs_blocks):
             parent, children = block[0], block[1:]
+            server_name = parent.split()[-1]
+            expected_name = golden_names[idx] if idx < len(golden_names) else None
+            if expected_name and not re.match(r"^<.*>$", expected_name) and server_name != expected_name:
+                failures.append(
+                    f"'{parent}': server name does not match the corporate TACACS server name '{expected_name}'."
+                )
             address_line = next((c for c in children if c.startswith("address ipv4")), None)
             if not address_line:
                 failures.append(f"'{parent}': no 'address ipv4' command found.")
@@ -223,8 +252,16 @@ class ControlEvaluator:
                     )
             if not any(re.match(r"key \d", c) for c in children):
                 failures.append(f"'{parent}': no 'key' command found.")
-            if not any(c.startswith("timeout") for c in children):
+            timeout_line = next((c for c in children if c.startswith("timeout")), None)
+            if not timeout_line:
                 failures.append(f"'{parent}': no 'timeout' command found.")
+            else:
+                expected_timeout = golden_timeouts[idx] if idx < len(golden_timeouts) else None
+                actual_timeout = timeout_line.split()[-1]
+                if expected_timeout and not re.match(r"^<.*>$", expected_timeout) and actual_timeout != expected_timeout:
+                    failures.append(
+                        f"'{parent}': timeout '{actual_timeout}' does not match the corporate standard '{expected_timeout}'."
+                    )
             for child in children:
                 if re.match(r"key 7 ", child):
                     failures.append(
@@ -247,6 +284,16 @@ class ControlEvaluator:
                     )
             if not any(c.startswith("ip tacacs source-interface") for c in children):
                 failures.append("No 'ip tacacs source-interface' configured under the TACACS server group.")
+
+            defined_server_names = {block[0].split()[-1] for block in tacacs_blocks}
+            for child in children:
+                if child.startswith("server name"):
+                    referenced_name = child.split()[-1]
+                    if referenced_name not in defined_server_names:
+                        failures.append(
+                            f"'{parent}': references server '{referenced_name}', which has no matching "
+                            f"'tacacs server {referenced_name}' definition."
+                        )
         return failures
 
     def _check_control_00005(self, device: ConfigTree, golden: ConfigTree, control: dict) -> list[str]:
@@ -256,6 +303,26 @@ class ControlEvaluator:
             failures.append("No 'username' command found in device configuration.")
         if not device.exists(r"^enable secret\s"):
             failures.append("No 'enable secret' command found in device configuration.")
+
+        # The local emergency (break-glass) user is identified by its
+        # 'algorithm-type scrypt' keyword - the one thing that distinguishes
+        # it from control_00015's plainer local-admin username line.
+        emergency_lines = [line for line in username_lines if "algorithm-type scrypt" in line]
+        if not emergency_lines:
+            failures.append("No local emergency user with 'algorithm-type scrypt' found.")
+        else:
+            golden_emergency_line = next(
+                (line for line in golden.all_text(r"^username\s") if "algorithm-type scrypt" in line), None
+            )
+            golden_name = golden_emergency_line.split()[1] if golden_emergency_line else None
+            for line in emergency_lines:
+                name = line.split()[1]
+                priv_match = re.search(r"privilege\s+(\d+)", line)
+                priv = priv_match.group(1) if priv_match else None
+                if priv != "15":
+                    failures.append(f"Emergency user '{name}': privilege level is '{priv}', expected 15.")
+                if golden_name and name != golden_name:
+                    failures.append(f"Emergency user name '{name}' does not match the corporate standard '{golden_name}'.")
 
         secret_types = {m.group(1) for line in username_lines if (m := re.search(r"\bsecret\s+(\d+)\s", line))}
         weak_types = secret_types & _WEAK_SECRET_TYPES
@@ -280,6 +347,19 @@ class ControlEvaluator:
             failures.append(
                 "RSA key generation (modulus 2048) is missing or RSA keys were zeroized without regeneration."
             )
+
+        for label, pattern in (
+            ("ip ssh version", r"^ip ssh version\s"),
+            ("ip ssh time-out", r"^ip ssh time-out\s"),
+            ("ip ssh authentication-retries", r"^ip ssh authentication-retries\s"),
+        ):
+            device_line = device.first_text(pattern)
+            golden_line = golden.first_text(pattern)
+            if device_line and golden_line:
+                expected = golden_line.split()[-1]
+                actual = device_line.split()[-1]
+                if actual != expected:
+                    failures.append(f"'{label}' is set to '{actual}', expected '{expected}' per corporate standard.")
         return failures
 
     def _check_control_00007(self, device: ConfigTree, golden: ConfigTree, control: dict) -> list[str]:
@@ -291,12 +371,46 @@ class ControlEvaluator:
         return failures
 
     def _check_control_00008(self, device: ConfigTree, golden: ConfigTree, control: dict) -> list[str]:
-        # Existence-only per spec: whether the ACL is actually bound to the VTY
-        # lines and restrictive rather than permissive is control_00014's job
-        # (it separately validates 'access-class' binding and ACL content).
-        if not device.exists(r"^ip access-list extended\s+\S+"):
+        # Owns ACL content/order validation (existence, naming, and rule-by-rule
+        # comparison against golden); control_00014 only checks that VTY lines
+        # actually bind to a real, existing ACL via 'access-class' - keeping the
+        # two controls independent rather than duplicating content checks.
+        device_acl_blocks = device.blocks(r"^ip access-list extended\s")
+        if not device_acl_blocks:
             return ["No 'ip access-list extended' block found in the running configuration."]
-        return []
+
+        golden_acl_blocks = golden.blocks(r"^ip access-list extended\s")
+        if not golden_acl_blocks:
+            return []  # nothing to compare against - existence alone is compliant
+
+        golden_name = golden_acl_blocks[0][0].split()[-1]
+        golden_rules = [c for c in golden_acl_blocks[0][1:] if not c.startswith("remark")]
+
+        device_block = next(
+            (b for b in device_acl_blocks if b[0].split()[-1] == golden_name), device_acl_blocks[0]
+        )
+        device_name = device_block[0].split()[-1]
+        device_rules = [c for c in device_block[1:] if not c.startswith("remark")]
+
+        failures = []
+        if device_name != golden_name:
+            failures.append(f"ACL name '{device_name}' does not match the corporate ACL name '{golden_name}'.")
+
+        if device_rules != golden_rules:
+            for i, expected in enumerate(golden_rules):
+                actual = device_rules[i] if i < len(device_rules) else None
+                if actual != expected:
+                    failures.append(
+                        f"ACL '{device_name}' rule #{i + 1}: expected '{expected}', "
+                        f"found '{actual or 'nothing (ACL ends early)'}'."
+                    )
+                    break
+            else:
+                extra = device_rules[len(golden_rules):]
+                failures.append(
+                    f"ACL '{device_name}' has {len(extra)} extra rule(s) beyond the corporate standard: {extra}."
+                )
+        return failures
 
     def _check_control_00009(self, device: ConfigTree, golden: ConfigTree, control: dict) -> list[str]:
         failures = []
@@ -305,24 +419,57 @@ class ControlEvaluator:
             failures.append("NTP server configuration is missing.")
         elif not any("prefer" in line for line in ntp_lines):
             failures.append("'prefer' keyword is missing on the primary NTP server.")
-        authenticated = (
-            device.exists(r"^ntp authenticate")
-            and device.exists(r"^ntp authentication-key\s")
-            and device.exists(r"^ntp trusted-key\s")
-        )
+
+        auth_key_line = device.first_text(r"^ntp authentication-key\s")
+        trusted_key_line = device.first_text(r"^ntp trusted-key\s")
+        authenticated = device.exists(r"^ntp authenticate") and auth_key_line and trusted_key_line
         if not authenticated:
             failures.append(
                 "NTP authentication is not configured "
                 "('ntp authenticate' / 'ntp authentication-key' / 'ntp trusted-key' missing)."
             )
+        else:
+            # The key ID must be the same one everywhere: the authentication key
+            # itself, the trusted-key declaration, and each 'ntp server ... key
+            # <id>' reference - a mismatch anywhere means that server's time
+            # isn't actually being authenticated even though the pieces exist.
+            auth_key_id = auth_key_line.split()[2]
+            trusted_key_id = trusted_key_line.split()[2]
+            if trusted_key_id != auth_key_id:
+                failures.append(
+                    f"'ntp trusted-key {trusted_key_id}' does not match 'ntp authentication-key {auth_key_id}'."
+                )
+            for line in ntp_lines:
+                key_match = re.search(r"\bkey\s+(\S+)", line)
+                if not key_match:
+                    failures.append(f"'{line}': missing a 'key <id>' reference to the NTP authentication key.")
+                elif key_match.group(1) != auth_key_id:
+                    failures.append(f"'{line}': references key '{key_match.group(1)}', expected '{auth_key_id}'.")
+
+        golden_ips = [line.split()[2] for line in golden.all_text(r"^ntp server\s")]
+        if golden_ips:
+            for line in ntp_lines:
+                ip = line.split()[2]
+                if ip not in golden_ips:
+                    failures.append(f"NTP server '{ip}' does not match any corporate NTP server ({golden_ips}).")
         return failures
 
     def _check_control_00010(self, device: ConfigTree, golden: ConfigTree, control: dict) -> list[str]:
         failures = []
         if not device.exists(r"^logging on"):
             failures.append("'logging on' command is missing.")
-        if not device.exists(r"^logging host\s"):
+        device_host_line = device.first_text(r"^logging host\s")
+        if not device_host_line:
             failures.append("Logging host IP address is missing.")
+        else:
+            golden_host_line = golden.first_text(r"^logging host\s")
+            if golden_host_line:
+                expected = golden_host_line.split()[-1]
+                actual = device_host_line.split()[-1]
+                if actual != expected:
+                    failures.append(
+                        f"Logging host '{actual}' does not match the corporate syslog server '{expected}'."
+                    )
         if not device.exists(r"^logging trap informational"):
             failures.append("Logging trap level is not set to 'informational'.")
         device_iface = device.first_text(r"^logging source-interface\s")
@@ -340,11 +487,14 @@ class ControlEvaluator:
 
     def _check_control_00011(self, device: ConfigTree, golden: ConfigTree, control: dict) -> list[str]:
         failures = []
-        if not device.exists(r"^snmp-server group\s+\S+\s+v3\s+priv"):
+        group_line = device.first_text(r"^snmp-server group\s+\S+\s+v3\s+priv")
+        if not group_line:
             failures.append("SNMPv3 group with 'priv' is not configured.")
-        if not device.exists(r"^snmp-server user\s+\S+\s+\S+\s+v3\s+auth\s+sha\s+\S+\s+priv\s+aes"):
+        user_line = device.first_text(r"^snmp-server user\s+\S+\s+\S+\s+v3\s+auth\s+sha\s+\S+\s+priv\s+aes")
+        if not user_line:
             failures.append("SNMPv3 user is not created with SHA/AES configuration.")
-        if not device.exists(r"^snmp-server host\s+\S+\s+version\s+3"):
+        host_line = device.first_text(r"^snmp-server host\s+\S+\s+version\s+3")
+        if not host_line:
             failures.append("SNMP trap host is missing.")
         if not device.exists(r"^snmp-server enable traps"):
             failures.append("'snmp-server enable traps' command is missing.")
@@ -352,6 +502,24 @@ class ControlEvaluator:
             failures.append(
                 "An SNMPv1/v2c community string ('snmp-server community') coexists with the SNMPv3 configuration."
             )
+
+        golden_group_line = golden.first_text(r"^snmp-server group\s+\S+\s+v3\s+priv")
+        if group_line and golden_group_line:
+            actual, expected = group_line.split()[2], golden_group_line.split()[2]
+            if actual != expected:
+                failures.append(f"SNMP group '{actual}' does not match the corporate group '{expected}'.")
+
+        golden_user_line = golden.first_text(r"^snmp-server user\s+\S+\s+\S+\s+v3\s+auth\s+sha\s+\S+\s+priv\s+aes")
+        if user_line and golden_user_line:
+            actual, expected = user_line.split()[2], golden_user_line.split()[2]
+            if actual != expected:
+                failures.append(f"SNMP user '{actual}' does not match the corporate user '{expected}'.")
+
+        golden_host_line = golden.first_text(r"^snmp-server host\s+\S+\s+version\s+3")
+        if host_line and golden_host_line:
+            actual, expected = host_line.split()[2], golden_host_line.split()[2]
+            if actual != expected:
+                failures.append(f"SNMP trap host '{actual}' does not match the corporate host '{expected}'.")
         return failures
 
     def _check_control_00012(self, device: ConfigTree, golden: ConfigTree, control: dict) -> list[str]:
@@ -376,6 +544,9 @@ class ControlEvaluator:
         return failures
 
     def _check_control_00014(self, device: ConfigTree, golden: ConfigTree, control: dict) -> list[str]:
+        # ACL content (rule-by-rule compliance) is control_00008's job now -
+        # this control only confirms VTY actually binds to a real, existing
+        # ACL via 'access-class ... in', keeping the two controls independent.
         failures = []
 
         con_blocks = device.blocks(r"^line con\s")
@@ -383,11 +554,16 @@ class ControlEvaluator:
             failures.append("No 'line console 0' configuration found.")
         else:
             parent, children = con_blocks[0][0], con_blocks[0][1:]
+            if not any(c.startswith("password") for c in children):
+                failures.append(f"'{parent}': password is missing.")
             if not any(c.startswith("login local") for c in children):
                 failures.append(f"'{parent}': 'login local' is missing.")
             if not any(c.startswith("exec-timeout") for c in children):
                 failures.append(f"'{parent}': 'exec-timeout' is missing.")
 
+        # Evaluated independently, per block - a device may legitimately split
+        # VTY lines across multiple ranges (e.g. 'line vty 0 4' + 'line vty 5
+        # 15'); every range found must carry the required policy on its own.
         vty_blocks = device.blocks(r"^line vty\s")
         if not vty_blocks:
             failures.append("No 'line vty' configuration found.")
@@ -395,40 +571,32 @@ class ControlEvaluator:
         checked_acls: set[str] = set()
         for block in vty_blocks:
             parent, children = block[0], block[1:]
-            if not any(c.startswith("login local") for c in children):
-                failures.append(f"'{parent}': 'login local' is missing.")
+            if not any(c.startswith("password") for c in children):
+                failures.append(f"'{parent}': password is missing.")
+            if not any(c.startswith("login authentication default") for c in children):
+                failures.append(f"'{parent}': 'login authentication default' is missing.")
             if not any(c.startswith("exec-timeout") for c in children):
                 failures.append(f"'{parent}': 'exec-timeout' is missing.")
 
-            transport_lines = [c for c in children if c.startswith("transport input")]
-            if not transport_lines or any(
-                "telnet" in line or "all" in line for line in transport_lines
-            ):
-                failures.append(f"'{parent}': 'transport input' is not restricted to secure protocols.")
+            for direction in ("input", "output"):
+                prefix = f"transport {direction}"
+                transport_lines = [c for c in children if c.startswith(prefix)]
+                if not transport_lines or any("telnet" in line or "all" in line for line in transport_lines):
+                    failures.append(f"'{parent}': 'transport {direction}' is not restricted to secure protocols.")
 
             acl_line = next((c for c in children if c.startswith("access-class")), None)
             if not acl_line:
                 failures.append(f"'{parent}': no 'access-class' ACL is bound to this VTY line.")
                 continue
+            if not acl_line.rstrip().endswith(" in"):
+                failures.append(f"'{parent}': '{acl_line}' is missing the required 'in' direction keyword.")
             acl_name = acl_line.split()[1]
             if acl_name in checked_acls:
                 continue
             checked_acls.add(acl_name)
 
-            acl_blocks = device.blocks(rf"^ip access-list \S+ {re.escape(acl_name)}\b")
-            if not acl_blocks:
+            if not device.blocks(rf"^ip access-list \S+ {re.escape(acl_name)}\b"):
                 failures.append(f"ACL '{acl_name}' referenced by access-class was not found in the configuration.")
-                continue
-            acl_children = acl_blocks[0][1:]
-            permissive = [
-                c for c in acl_children
-                if re.match(r"permit\s+(ip|tcp)\s+any\s+any\b", c) or re.search(r"eq\s+telnet\b", c)
-            ]
-            if permissive:
-                failures.append(
-                    f"ACL '{acl_name}' bound to VTY lines is permissive instead of restrictive: "
-                    + "; ".join(permissive)
-                )
         return failures
 
     def _check_control_00015(self, device: ConfigTree, golden: ConfigTree, control: dict) -> list[str]:

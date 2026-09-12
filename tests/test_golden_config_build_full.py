@@ -89,7 +89,7 @@ def test_line_vty_appears_exactly_once_with_full_settings():
     assert len(vty_blocks) == 1
     children = vty_blocks[0][1:]
     assert any(c.startswith("transport input ssh") for c in children)
-    assert any(c.startswith("login local") for c in children)
+    assert any(c.startswith("login authentication default") for c in children)
     assert any(c.startswith("access-class") for c in children)
 
 
@@ -102,12 +102,12 @@ def test_self_evaluation_against_compliance_checker():
     # 00016/00017/00018 are expected non-passes here purely because their
     # content was never rendered (they're inactive-by-design in this version),
     # not because of any control_00001-00015 regression:
-    #  - control_00008 (ACL for VTY) now renders its own real
+    #  - control_00008 (ACL for VTY) renders its own real
     #    'ip access-list extended ACME_VTY_MGMT_ACL / permit ip any any' block
-    #    (existence-only check -> PASS), which in turn means control_00014's
-    #    access-class binding now resolves to a real (if permissive) ACL -
-    #    so control_00014 FAILs for a more specific reason than before
-    #    ("ACL is permissive" instead of "ACL not found").
+    #    (from command_template - the richer Cloudflare-deny-list example only
+    #    lives in config_example, not rendered by Tool 2). Self-compared
+    #    against itself, its content trivially matches -> PASS. control_00014
+    #    only needs that ACL to exist (content is control_00008's job) -> PASS.
     #  - control_00016's mandatory-command items (e.g. 'no ip http server')
     #    are never auto-rendered (GOLDEN_CONFIG_CREATOR.md section 12) even
     #    when 16 WAS in the active set, and it's excluded from the active set
@@ -131,7 +131,6 @@ def test_self_evaluation_against_compliance_checker():
     evaluator = ControlEvaluator()
 
     expected_non_pass = {
-        "control_00014": STATUS_FAIL,  # ACL exists (via control_00008) but is permissive
         "control_00016": STATUS_FAIL,  # inactive by default - never rendered
         "control_00017": STATUS_FAIL,  # inactive by default - never rendered
     }

@@ -221,8 +221,52 @@ Confirmed: `control_00016`, `control_00017`, `control_00018` are **not** part of
 ### G4. control_00006 — RSA key generation presence isn't independently checked (pre-existing, out of scope)
 - The current checker only flags missing RSA keys if `crypto key zeroize rsa` was run without a matching `crypto key generate rsa modulus ...` afterward — it doesn't independently require key generation to have happened at all. `samples/device_config.txt` has no `crypto key generate rsa` line and isn't flagged for it. This predates this task and control_00006 wasn't in scope for a rebuild, so it was left untouched — noted here for visibility only.
 
-### G5. `samples/golden_config.txt` — duplicate, conflicting ACL definitions
-- This hand-authored fixture has **two** `ip access-list extended ACME_VTY_MGMT_ACL` blocks: a restrictive one (management-subnet-scoped) and, near the end of the file, a second "SOLO LAB/TESTING" permit-all duplicate under the identical name. Only the first is ever matched by `ConfigTree.blocks()`, so the second is currently inert. Left untouched (out of scope for this task, and not something you asked to have cleaned up) — flagged here in case it was an unintentional leftover from earlier testing.
+### G5. `samples/golden_config.txt` — duplicate, conflicting ACL definitions — **RESOLVED in Pass 2**
+- This hand-authored fixture had **two** `ip access-list extended ACME_VTY_MGMT_ACL` blocks: a restrictive one and, near the end of the file, a second "SOLO LAB/TESTING" permit-all duplicate under the identical name. Fixed in Pass 2 (see below) as part of rebuilding this fixture's ACL to match the new production-style content — the duplicate is gone, replaced by one real ACL block.
 
 ### G6. control_00012 — spec says "Deterministic Validation: No", implementation says otherwise
 - Not something this task changed — an earlier session (same day) deliberately made `control_00012` (Banners) get a real presence-only checker so a missing banner counts against the compliance score, while `manual_review: true` still governs Tool 2's rendering (wording/legal-language approval stays human). The new spec's literal text (`Deterministic Validation: No` / `Manual Review: Yes`) doesn't reflect this, since it predates that decision. Documented in `CLAUDE.md` §11 both times.
+
+---
+
+## Pass 2 — Re-alignment with the further-updated PDF + NCM script (2026-09-12)
+
+Both reference documents changed again (PDF grew to ~20 pages covering every control in full; `NCM Configuration Script.txt` gained real multi-range VTY lines, NTP key references, and a full production ACL). Per your instructions this pass, a new `Fixed_value: yes/no` field in the PDF (present on nearly every control except Hostname) is taken **literally**: where `yes`, the documented/golden value is the *required* value on every device, not a placeholder. `device_configs/_index.csv` (your 75 fixtures) was **not** used to drive scope directly, though most of its scenarios end up covered anyway as a side effect of the `Fixed_value` work.
+
+### Updated control mapping
+
+| Control | Change this pass |
+|---|---|
+| 00001, 00002, 00007, 00013, 00015 | No change (`Fixed_value: no`/already-matching, or — for 00012 — deliberately not applying `Fixed_value` per its manual-review rationale, see G6). |
+| 00003 AAA | Added: TACACS group name now also compared literally to golden (previously only self-consistency across the 12 AAA lines). |
+| 00004 TACACS | Added: server **name** and **timeout** compared literally to golden (address already was). Added: each `server name X` reference under `aaa group server tacacs+` must correspond to a real `tacacs server X` block (a referential-integrity gap found via live spot-checking, not from the PDF/CSV directly — analogous to control_00014's existing "ACL referenced by access-class must exist" check). Key type-0 (cleartext) still unflagged, per your explicit choice, again. |
+| 00005 Local emergency users | Rebuilt: the emergency user is now identified by its `algorithm-type scrypt` keyword (distinguishing it from control_00015's plainer admin line); privilege level must be exactly 15; username compared literally to golden. Missing/wrong `algorithm-type` (e.g. `md5`) now correctly fails. |
+| 00006 SSH | Added: `ip ssh version`/`time-out`/`authentication-retries` compared literally to golden instead of presence-only. |
+| 00008 ACL for VTY | Rebuilt: now parses the device's named ACL and golden's same-named ACL and compares rule-by-rule, in order (via `ConfigTree.blocks()`, which preserves line order), reporting the first point of divergence. Replaces the old existence-only check. `controls.yaml`'s `config_example` now shows the real production ACL (explicit Cloudflare-range denies, restricted SSH permit, terminal `deny ip any any log`). |
+| 00009 NTP | Added: `ntp trusted-key <id>` must match `ntp authentication-key <id>`, and each `ntp server ... key <id>` must reference that same id (a real bug in my own new code was caught here mid-implementation — see Testing below). Server IPs compared literally to golden. |
+| 00010 Syslog | Added: syslog host IP compared literally to golden (closes a gap between the module's own docstring, which already claimed this, and the code, which never actually did it). |
+| 00011 SNMP | Added: SNMP group name, user name, and trap host IP compared literally to golden. |
+| 00014 VTY Lines | Rebuilt: VTY now requires `login authentication default` (was `login local` — console keeps `login local`, since PDF's Command block and the NCM script agree this is intentionally different, not a typo: VTY should invoke the AAA method list control_00003 sets up, console keeps a working local fallback). Added password-presence check, `transport output` restriction (alongside existing `transport input`), and `access-class <name>` must end with the literal `in` keyword. ACL **content** checking removed entirely from this control (moved to 00008) — this control now only confirms VTY binds to a real, existing ACL. Already iterated every `line vty` block found (0-4 and 5-15 both) before this pass, so multi-range handling needed no change. |
+
+### Code changes
+
+| File | Change |
+|---|---|
+| `compliance_engine.py` | `_check_control_00003/04/05/06/08/09/10/11/14` all rebuilt/extended per the table above; module docstring updated (expanded "shared infrastructure values" list, new note on `login local` vs `login authentication default`). |
+| `controls.yaml` | Matching `not_compliance_conditions`/`command_template`/`config_example` text refresh for the same 9 controls; fixed a pre-existing typo in 00004's `config_example` (`192.138.100.102` → `192.168.100.102`). |
+| `samples/golden_config.txt` | NTP `key 1` added to both server lines; VTY split into `line vty 0 4` / `line vty 5 15` (matching the real NCM script structure) with explicit passwords and `login authentication default`; the duplicate/conflicting ACL (see G5, now resolved) replaced with one real Cloudflare-deny/SSH-permit/deny-log ACL matching the new `config_example`; header comment's "shared infrastructure values" list expanded to match. |
+| `tests/test_compliance_engine.py` | ~25 tests added/updated across the 9 controls above (see Testing). |
+| `tests/test_golden_config_build_full.py` | `test_line_vty_appears_exactly_once_with_full_settings` updated for `login authentication default`; self-evaluation's `expected_non_pass` no longer includes `control_00014` (it now correctly self-PASSes, since ACL content is 00008's job and 00008's Tool-2-rendered content trivially matches itself). |
+
+### Discrepancies and risks (Pass 2)
+
+- **A real bug was found and fixed during implementation, not by you**: my first draft of the NTP key-ID check indexed `"ntp authentication-key 1 md5 ...".split()[1]`, which is `"authentication-key"` (a hyphenated single token), not the ID — the ID is at index 2. Caught immediately by the self-evaluation test failing with an obviously-wrong message and fixed before any other testing.
+- **`login local` → `login authentication default` on VTY** is a real, non-ambiguous behavior change (both PDF and NCM script agree) — worth knowing since it inverts prior behavior: a device using `login local` on VTY (bypassing the AAA method list control_00003 configures) now correctly FAILs where it used to PASS.
+- Per your "no CSV scope" choice, `VTY exec-timeout` value thresholds (`0 0` disabling timeout, or exceeding a policy maximum) and TACACS `key 0` (cleartext) remain unflagged — both are still only exercised by `device_configs/*.txt` fixtures, not the PDF/NCM script text.
+
+### Testing (Pass 2)
+
+- **Tests added:** ~25 new/updated tests in `tests/test_compliance_engine.py` across control_00003/04/05/06/08/09/10/11/14 (golden-literal-comparison cases, the new ACL rule-by-rule comparison, NTP key-ID consistency, the TACACS server-name referential-integrity check, VTY `login authentication default`/`transport output`/`access-class in` cases).
+- **Tests updated:** `_COMPLETE_AAA_BLOCK` and 2 dependent tests (group name changed to match golden literally); `_COMPLIANT_SNMP` tests (added a matching golden fixture); NTP "authenticated with prefer" test (added `key 1`); both VTY control_00014 tests rewritten (ACL-permissiveness assertions moved to new 00008 tests).
+- **Tests passed:** 169/169 (up from 168 baseline + 1 net after consolidating/replacing some).
+- **Live verification:** `samples/device_config.txt` audited against the updated `samples/golden_config.txt` — all new checks fire correctly (group/server-name/timeout/SSH-value/ACL-content/NTP-key/syslog-host/SNMP/VTY-login mismatches all correctly FAIL). Self-consistency (`samples/golden_config.txt` against itself) — all 15 controls PASS cleanly. Spot-checked 6 of your 75 `device_configs/*.txt` fixtures targeting now-covered scenarios (`ssh_config_02`, `emergency_user_config_02`, `acl_vty_config_05`, `vty_lines_config_05`, `ntp_config_05`, `tacacs_config_05`) — all 6 now correctly FAIL for their intended reason.

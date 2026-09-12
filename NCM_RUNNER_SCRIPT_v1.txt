@@ -69,3 +69,51 @@ python main.py \
   --output-dir ./reports \
   --formats html,pdf
 
+
+10/09/2026
+
+python golden_config_main.py \
+  --controls controls.yaml \
+  --device-vars device_vars.json \
+  --output golden_config_11_08_2026.txt
+  
+11/09/2026
+
+python main.py \
+  --device-config support_files/NCM Configuration Script.txt \
+  --golden-config golden_config_11_08_2026.txt \
+  --controls controls.yaml \
+  --output-dir ./reports \
+  --formats html,pdf
+  
+ 
+python main.py \
+  --device-config no_aaa_perfect_config.txt\
+  --golden-config golden_config_11_08_2026.txt \
+  --controls controls.yaml \
+  --output-dir ./reports \
+  --formats html,pdf
+  
+  
+python main.py \
+  --device-config samples/no_aaa_perfect_config.txt \
+  --golden-config golden_config_11_08_2026.txt \
+  --controls controls.yaml \
+  --output-dir ./reports \
+  --formats html,pdf
+  
+  
+python main.py \
+  --device-config samples/ugly_config.txt \
+  --golden-config golden_config_11_08_2026.txt \
+  --controls controls.yaml \
+  --output-dir ./reports \
+  --formats html,pdf
+
+
+python main.py \
+  --device-config-dir ./device_configs \
+  --golden-config golden_config_11_08_2026.txt \
+  --controls controls.yaml \
+  --output-dir ./reports \
+  --formats html,json

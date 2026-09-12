@@ -90,6 +90,7 @@
   not_compliance_conditions:
     - "One of the required AAA commands is missing"
     - "The TACACS group referenced does not match across all AAA commands"
+    - "The TACACS group referenced does not match the corporate group in the golden config"
     - "'aaa new-model' is missing"
   exceptions:
     - "The device being audited specifically indicates that AAA is not needed."
@@ -145,6 +146,8 @@
     - "The commands are not present with the assigned variables (server names, group, source-interface)"
     - "TACACS key is stored using reversible Type 7 encoding instead of Type 6 ('key config-key password-encrypt' + 'key 6 <key>')"
     - "'address ipv4' is missing under a 'tacacs server' block, two TACACS servers share the same address, or an address does not match the corporate value in the golden config (when golden gives a real IP rather than a placeholder)"
+    - "A TACACS server's name or timeout does not match the corporate value in the golden config (when golden gives a real value rather than a placeholder)"
+    - "A 'server name' reference under 'aaa group server tacacs+' does not correspond to any defined 'tacacs server' block"
   exceptions:
     - "In some cases there is no TACACS server active in the environment. This condition should be indicated prior to device configuration."
     - "Some old IOS versions do not support these commands."
@@ -167,7 +170,7 @@
      key 6 <encrypted_key>
      timeout 10
     tacacs server ACME_TACACS_02
-     address ipv4 192.138.100.102
+     address ipv4 192.168.100.102
      key 6 <encrypted_key>
      timeout 10
     aaa group server tacacs+ ACME_TACACS_SERVER_GROUP
@@ -193,6 +196,7 @@
     - "Enable secret should be present"
     - "The commands must be executed with the assigned variables"
     - "Local user accounts use inconsistent password-hashing types (mixing type 5/0 with type 8/9), or use the weak type 5/0 hash"
+    - "The local emergency user is missing 'algorithm-type scrypt', is not privilege 15, or its name does not match the corporate standard in the golden config"
   exceptions:
     - "No specific exceptions identified for this control."
   severity: High
@@ -231,6 +235,7 @@
     - "Hostname is not configured"
     - "IP domain-name is not configured"
     - "RSA key generation (modulus 2048) is missing"
+    - "'ip ssh version', 'ip ssh time-out', or 'ip ssh authentication-retries' does not match the corporate value in the golden config"
   exceptions:
     - "No specific exceptions identified for this control."
   severity: High
@@ -283,29 +288,52 @@
 - control_id: control_00008
   title: "ACL for VTY"
   explanation: >
-    Requires a named extended ACL to exist for scoping administrative access to
-    the VTY lines (see control_00014 for whether it's actually bound to the VTY
-    lines and restrictive rather than permissive).
+    Requires a named extended ACL scoping administrative access - its full rule
+    content, in order, is validated here against the corporate standard (see
+    control_00014 for whether it's actually bound to the VTY lines via
+    'access-class').
   command_template: |
     ip access-list extended <acl_name>
      permit ip any any
   variables:
     - acl_name
   not_compliance_conditions:
-    - "ACL does not exist."
+    - "ACL does not exist"
+    - "ACL name does not match the corporate ACL name in the golden config"
+    - "ACL rule content or order does not match the corporate standard in the golden config (e.g. a permissive 'permit ip any any' or wildcard-equivalent-to-any rule, or a missing terminal explicit deny-log)"
   exceptions:
     - "No specific exceptions identified for this control."
   severity: High
   risk: >
-    Without an ACL scoping administrative access, the equipment is exposed to a
-    security breach from unrestricted management-plane reachability.
-  remediation: "Apply ACL configuration inside the VTY configuration module."
+    Without a correctly-scoped ACL, the equipment is exposed to a security
+    breach from unrestricted management-plane reachability.
+  remediation: "Apply the corporate-standard ACL content, in order, inside the VTY configuration module."
   evidence: "'ip access-list extended' in the running configuration."
   deterministic_validation: true
   manual_review: false
   config_example: |
     ip access-list extended ACME_VTY_MGMT_ACL
-     permit ip any any
+     remark ACME - Deny explicito a rangos de Cloudflare
+     deny ip any 173.245.48.0 0.0.15.255
+     deny ip any 103.21.244.0 0.0.3.255
+     deny ip any 103.22.200.0 0.0.3.255
+     deny ip any 103.31.4.0 0.0.3.255
+     deny ip any 141.101.64.0 0.0.63.255
+     deny ip any 108.162.192.0 0.0.63.255
+     deny ip any 190.93.240.0 0.0.15.255
+     deny ip any 188.114.96.0 0.0.15.255
+     deny ip any 197.234.240.0 0.0.3.255
+     deny ip any 198.41.128.0 0.0.127.255
+     deny ip any 162.158.0.0 0.1.255.255
+     deny ip any 104.16.0.0 0.7.255.255
+     deny ip any 104.24.0.0 0.3.255.255
+     deny ip any 172.64.0.0 0.7.255.255
+     deny ip any 131.0.72.0 0.0.3.255
+     remark ACME - Solo se permite trafico SSH
+     permit tcp any any eq 22
+     permit tcp any eq 22 any
+     remark ACME - Deny explicito de cualquier otro protocolo
+     deny ip any any log
 
 - control_id: control_00009
   title: "NTP"
@@ -316,8 +344,8 @@
     ntp authentication-key <ntp_key_id> md5 <ntp_key_value>
     ntp trusted-key <ntp_key_id>
     ntp authenticate
-    ntp server <ntp_ip_address> prefer
-    ntp server <secondary_ntp_ip_address>
+    ntp server <ntp_ip_address> key <ntp_key_id> prefer
+    ntp server <secondary_ntp_ip_address> key <ntp_key_id>
   variables:
     - ntp_ip_address
     - secondary_ntp_ip_address
@@ -327,6 +355,8 @@
     - "NTP server configuration is missing"
     - "'prefer' keyword is missing on the primary NTP server"
     - "NTP authentication is not configured ('ntp authenticate' / 'ntp authentication-key' / 'ntp trusted-key' missing)"
+    - "'ntp trusted-key' does not match 'ntp authentication-key', or an 'ntp server' line does not reference that same key id"
+    - "An NTP server IP does not match the corporate value in the golden config"
   exceptions:
     - "No specific exceptions identified for this control."
   severity: Medium
@@ -342,11 +372,11 @@
   deterministic_validation: true
   manual_review: false
   config_example: |
-    ntp authentication-key 1 md5 <key> 7
+    ntp authentication-key 1 md5 0123456789
     ntp trusted-key 1
     ntp authenticate
-    ntp server 10.10.10.100 prefer
-    ntp server 20.20.20.100
+    ntp server 10.10.10.100 key 1 prefer
+    ntp server 20.20.20.100 key 1
 
 - control_id: control_00010
   title: "Syslog"
@@ -363,7 +393,7 @@
     - syslog_interface
   not_compliance_conditions:
     - "'logging on' command is missing"
-    - "Logging host IP address is missing"
+    - "Logging host IP address is missing, or does not match the corporate syslog server in the golden config"
     - "Logging trap level is not set to 'informational'"
     - "'logging source-interface' is not configured correctly"
   exceptions:
@@ -406,6 +436,7 @@
     - "SNMP trap host is missing"
     - "'snmp-server enable traps' command is missing"
     - "An SNMPv1/v2c community string ('snmp-server community') coexists with the SNMPv3 configuration"
+    - "SNMP group name, user name, or trap host does not match the corporate value in the golden config"
   exceptions:
     - "No specific exceptions identified for this control."
   severity: High
@@ -495,11 +526,15 @@
     line vty <start_line_number> <end_line_number>
      access-class <vty_acl_name> in
      password <vty_password>
-     login local
+     login authentication default
      exec-timeout <minutes> <seconds>
      transport input <allowed_protocols>
+     transport output <allowed_protocols>
      logging synchronous
      exit
+  # Console keeps 'login local' (a working fallback if TACACS is unreachable);
+  # VTY uses 'login authentication default' to invoke the AAA method list
+  # control_00003 sets up - these are intentionally different, not a typo.
   variables:
     - console_password
     - start_line_number
@@ -509,34 +544,54 @@
     - vty_acl_name
   not_compliance_conditions:
     - "Console or VTY passwords are missing"
-    - "'login local' is missing"
+    - "Console 'login local' is missing, or VTY 'login authentication default' is missing"
     - "'exec-timeout' is missing"
-    - "'transport input' is not restricted to secure protocols"
-    - "The ACL applied to VTY lines via 'access-class' is permissive (permits unrestricted 'any' source or allows telnet) instead of restrictive"
+    - "'transport input' or 'transport output' is not restricted to secure protocols"
+    - "'access-class <name>' on a VTY line is missing the required 'in' direction keyword"
+    - "The ACL referenced by 'access-class' does not exist in the configuration (see control_00008 for whether its content is compliant)"
   exceptions:
     - "No specific exceptions identified for this control."
   severity: High
   risk: >
     Open VTY/Console sessions without timeouts can be hijacked. Insecure protocol
-    support allows for credential theft. A permissive ACL negates the value of
-    access control on the management plane.
+    support allows for credential theft. VTY lines that bypass the configured AAA
+    method list (e.g. via 'login local' instead of 'login authentication default')
+    defeat centralized TACACS authentication and accounting.
   remediation: >
-    Apply 'exec-timeout', 'login local', and restrict transport protocols for all
-    access lines; bind VTY lines to a restrictive ACL scoped to authorized
-    management sources only.
+    Apply 'exec-timeout' and a password on all access lines; use 'login local' on
+    console and 'login authentication default' on VTY; restrict transport input
+    and output to secure protocols; bind VTY lines to a named ACL via
+    'access-class <name> in'.
   evidence: "Configuration blocks for 'line console 0' and 'line vty', and the referenced access-list."
   deterministic_validation: true
   manual_review: false
   config_example: |
-    line vty 0 15
-     access-class VTY_ACL_NAME in
+    line con 0
+     password 0123456789
+     login local
      exec-timeout 10 0
+     logging synchronous
+     exit
+    line vty 0 4
+     access-class ACME_VTY_MGMT_ACL in
+     password 0123456789
+     login authentication default
+     exec-timeout 10 0
+     logging synchronous
+     exec prompt timestamp
      transport input ssh
      transport output ssh
+     exit
+    line vty 5 15
+     access-class ACME_VTY_MGMT_ACL in
+     password 0123456789
+     login authentication default
+     exec-timeout 10 0
      logging synchronous
-     session-timeout 10
      exec prompt timestamp
-     history size 20
+     transport input ssh
+     transport output ssh
+     exit
 
 - control_id: control_00015
   title: "Local user and enable secret"
