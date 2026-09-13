@@ -1,6 +1,6 @@
 # Running the App
 
-This project (Agent-Assisted Coding) is five separate command-line tools that share one file, `controls.yaml`, as their single source of truth. This guide covers installing them and every way to invoke each one. For what each file/folder is and how the tools relate, see [`PROJECT_STRUCTURE.md`](PROJECT_STRUCTURE.md). For what each Python function actually does internally, see [`FUNCTION_REFERENCE.md`](FUNCTION_REFERENCE.md).
+This project (Agent-Assisted Coding) is six separate command-line tools that share one file, `controls.yaml`, as their single source of truth. This guide covers installing them and every way to invoke each one. For what each file/folder is and how the tools relate, see [`PROJECT_STRUCTURE.md`](PROJECT_STRUCTURE.md). For what each Python function actually does internally, see [`FUNCTION_REFERENCE.md`](FUNCTION_REFERENCE.md).
 
 ### Historic archiving — applies to Tools 1, 3, and 5
 
@@ -112,6 +112,21 @@ python main.py --device-config samples/device_config.txt --golden-config samples
   --controls controls.yaml --output-dir ./reports --exceptions exceptions.yaml
 ```
 Any control that would have FAILed and has a matching entry becomes status `EXCEPTION` instead (a control that already PASSes is unaffected — an exception can't turn a pass into anything else).
+
+Each entry may instead be a dict with approval metadata — `main.py` still only ever reads the `reason` (the `EXCEPTION` status logic is unchanged either way); the rest is for Tool 6's dashboard, which is also the only place `expiration_date` is actually enforced (an expired exception is shown distinctly and excluded from the dashboard's "accepted posture" metric):
+```yaml
+control_00004:
+  reason: "No TACACS+ infrastructure in this lab environment."
+  approver: "jane.doe"
+  ticket: "CHG-1234"
+  approval_date: "2026-01-01"
+  expiration_date: "2026-12-31"
+  compensating_control: "Site has no external network access."
+```
+
+### A checker that raises no longer crashes the run
+
+If a control's checker hits an unexpected exception (a malformed config triggering a parsing error, say), that one control is marked `ASSESSMENT_ERROR` — the rest of that device's controls, and the rest of a batch run's other devices, still complete normally.
 
 ### Common errors
 
@@ -284,11 +299,61 @@ Giving `--out` (and/or `--out-md`) writes only to that exact path — no `compli
 | A control's risk statement fails deterministic validation, tool exits non-zero | The `risk` text in `controls.yaml` doesn't meet the report's writing-quality rules (e.g. hedging language). Re-run with `--llm-polish`, or edit that control's `risk` text directly. |
 | PDF requested but WeasyPrint import fails | System libraries missing — see Prerequisites. |
 
-## 6. Batch reports and the LLM advisor
+## 6. Tool 6 — Executive Compliance Dashboard (`compliance_dashboard_main.py`)
+
+Aggregates every device's `report.json` from one Tool 1 run into a fleet-level executive dashboard — KPIs, device posture, compliance-by-control, top failing controls, a device × control heatmap, drill-down detail, a findings table, and a compliance trend built from every dashboard run's history snapshot. Purely deterministic (no LLM) — every number comes from `compliance_metrics.py`. Self-contained: one static HTML file with the fleet data embedded inline and vanilla JS for filtering — no server, no new dependency, works offline. See [`FUNCTION_REFERENCE.md`](FUNCTION_REFERENCE.md) for the module breakdown.
+
+### All flags
+
+```
+--reports-dir DIRECTORY  A single Tool 1 run's output root (e.g. reports/latest) - reports_dir/report.json
+                         (single device) or reports_dir/<device>/report.json (batch).      [required]
+                         Not searched recursively - pointing this at reports/ instead of reports/latest/
+                         is an error, not silent over-collection of every historical run's devices.
+--controls FILE          Path to controls.yaml (only used for this run's controls_version marker). [required]
+--output-dir DIRECTORY   Historic archive root.                        [default: compliance_dashboards]
+--exceptions FILE        Optional exceptions.yaml (same file main.py --exceptions uses) - read here
+                         for approver/ticket/expiration metadata.
+--history-dir DIRECTORY  Where every run's history snapshot is kept - never replaced.  [default: compliance_history]
+--formats TEXT           Comma-separated: html, pdf, csv.                    [default: html,pdf]
+--help
+```
+
+### Scenario: fleet dashboard from a batch audit
+
+```bash
+python main.py --device-config-dir device_configs --golden-config golden_config.txt \
+  --controls controls.yaml --output-dir ./reports --formats json
+
+python compliance_dashboard_main.py \
+  --reports-dir reports/latest \
+  --controls controls.yaml \
+  --output-dir compliance_dashboards \
+  --formats html,pdf,csv
+```
+**Output:** `compliance_dashboards/<timestamp>/compliance_dashboard.html` (+ `.pdf`, `findings.csv` if requested), plus a refreshed `compliance_dashboards/latest/` mirror, plus one new `compliance_history/<timestamp>.json` snapshot (never overwritten — every run's snapshot is kept so the trend chart has real history). Console prints a one-line fleet summary (`N device(s): X% strict compliance, Y% coverage, Z critical finding(s).`).
+
+Run it again after a later audit and the trend chart on the dashboard shows two points; run it a third time for three, and so on.
+
+### What's genuinely dynamic vs. what's a known, documented gap
+
+Every KPI, chart, and table is computed from whatever `--reports-dir` actually contains — nothing about device count or control count is hard-coded. Two things from a fuller "executive dashboard" spec are **not** implemented, on purpose, rather than faked:
+- **No breakdown by site/country/model/OS/vendor** — this project has no device metadata beyond a filename-derived device name anywhere in the pipeline.
+- **`Owner`/`Ticket`/`Due Date` columns in the findings table/CSV are always empty** — no workflow-assignment system exists to populate them (a `Ticket` value does show up for an `APPROVED_EXCEPTION` row if its `exceptions.yaml` entry has one, since that's the one workflow field the project actually tracks).
+- **No control is `Critical` severity by default** — `controls.yaml` only uses Low/Medium/High. `Critical` is a fully wired severity tier (KPI cards, the device-posture "Critical Non-Compliant" bucket, the risk-override logic), it's just that deciding *which* controls are business-critical isn't this tool's call to make — set `severity: Critical` on a control in `controls.yaml` yourself if you want one to carry that weight.
+
+### Common errors
+
+| Symptom | Cause |
+|---|---|
+| `No report.json found directly under <dir> ...` | `--reports-dir` doesn't have `report.json` or `*/report.json` directly inside it — check you're pointing at a specific run (e.g. `reports/latest`), not the whole `reports/` archive. |
+| PDF requested but WeasyPrint import fails | System libraries missing — see Prerequisites. |
+
+## 7. Batch reports and the LLM advisor
 
 The Remediation Advisor currently reads **one** device's `report.json` at a time — `main.py`'s batch mode produces a `report.json` per device (no combined multi-device JSON yet; only the HTML `fleet_report.html` is a true fleet-level artifact today). To brief multiple devices, run `agent_assisted_coding_advise.py` once per device's `report.json`.
 
-## 7. Local LLM backend (`local-llm/`)
+## 8. Local LLM backend (`local-llm/`)
 
 Provisions and runs the model `agent_assisted_coding_advise.py` talks to. See `local-llm/README.md` and `LOCAL_LLM_SETUP_PROMPT.md` for the full rationale (why llama.cpp, why Vulkan not CUDA on Linux, the 6GB-VRAM "one model at a time" constraint).
 

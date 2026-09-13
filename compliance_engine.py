@@ -42,6 +42,10 @@ STATUS_PASS = "PASS"
 STATUS_FAIL = "FAIL"
 STATUS_EXCEPTION = "EXCEPTION"
 STATUS_MANUAL_REVIEW = "MANUAL_REVIEW"
+# Not raised by ControlEvaluator itself - main.py's batch loop catches an
+# unexpected checker exception per-control and builds a ControlResult with
+# this status instead of letting it crash the rest of the device/fleet.
+STATUS_ASSESSMENT_ERROR = "ASSESSMENT_ERROR"
 
 # controls.yaml defines control_00001-00018, but only 1-15 are active for this
 # version - 16-18 stay defined for future use but are filtered out unconditionally

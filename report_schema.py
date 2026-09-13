@@ -18,7 +18,7 @@ class ControlReportEntry(BaseModel):
 
     control_id: str
     title: str
-    status: Literal["PASS", "FAIL", "EXCEPTION", "MANUAL_REVIEW"]
+    status: Literal["PASS", "FAIL", "EXCEPTION", "MANUAL_REVIEW", "ASSESSMENT_ERROR"]
     severity: Literal["Low", "Medium", "High"]
     risk: str
     evidence_found: str

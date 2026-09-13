@@ -35,7 +35,7 @@ from pathlib import Path
 import click
 import yaml
 
-from compliance_engine import ACTIVE_CONTROL_IDS, ControlEvaluator, ControlResult
+from compliance_engine import ACTIVE_CONTROL_IDS, STATUS_ASSESSMENT_ERROR, ControlEvaluator, ControlResult
 from report_generator import render_fleet_html, render_html, render_json, render_pdf
 from run_archive import new_run_dir, refresh_latest
 
@@ -47,12 +47,24 @@ def load_controls(path: Path) -> list[dict]:
 
 
 def load_exceptions(path: Path | None) -> dict[str, str]:
-    """Load a control_id -> reason mapping from an optional exceptions file."""
+    """Load a control_id -> reason mapping from an optional exceptions file.
+
+    Each entry may be a plain reason string (unattributed, non-expiring - the
+    original format) or a dict with a required 'reason' key plus optional
+    approver/ticket/approval_date/expiration_date/compensating_control fields.
+    Either way, ControlEvaluator only ever sees the reason string - it has no
+    concept of approval metadata or expiration; that richer data is read
+    independently by compliance_exceptions.py for the dashboard, which is also
+    the only place expiration is actually enforced.
+    """
     if not path:
         return {}
     with open(path, encoding="utf-8") as f:
         data = yaml.safe_load(f) or {}
-    return dict(data)
+    return {
+        control_id: entry["reason"] if isinstance(entry, dict) else entry
+        for control_id, entry in data.items()
+    }
 
 
 def _evaluate_device(
@@ -64,10 +76,34 @@ def _evaluate_device(
     report_dir: Path,
     requested_formats: set[str],
 ) -> list[ControlResult]:
-    """Evaluate one device config and write its report(s) into `report_dir`."""
+    """Evaluate one device config and write its report(s) into `report_dir`.
+
+    Each control is evaluated independently: a checker raising an unexpected
+    exception (a malformed config triggering an IndexError/KeyError/etc. deep
+    in a regex/block-parsing path, say) marks only that one control as
+    STATUS_ASSESSMENT_ERROR rather than crashing the rest of this device's
+    controls or the rest of a batch run's other devices.
+    """
     device_config = device_config_path.read_text(encoding="utf-8")
     evaluator = ControlEvaluator(exceptions=exceptions)
-    results = [evaluator.evaluate_control(c, device_config, golden_config) for c in controls]
+    results = []
+    for c in controls:
+        try:
+            results.append(evaluator.evaluate_control(c, device_config, golden_config))
+        except Exception as exc:  # noqa: BLE001 - deliberately broad, see docstring
+            results.append(
+                ControlResult(
+                    control_id=c["control_id"],
+                    title=c["title"],
+                    status=STATUS_ASSESSMENT_ERROR,
+                    severity=c["severity"],
+                    risk=c["risk"],
+                    evidence_found=f"Evaluation failed: {exc}",
+                    remediation=c["remediation"],
+                    explanation=c.get("explanation", ""),
+                    details=[f"{type(exc).__name__}: {exc}"],
+                )
+            )
 
     report_dir.mkdir(parents=True, exist_ok=True)
     html_path = report_dir / "report.html"

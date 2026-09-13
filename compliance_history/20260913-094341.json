@@ -1,0 +1,31 @@
+{
+  "timestamp": "2026-09-13T09:43:41",
+  "controls_version": "320e51b",
+  "metrics": {
+    "device_count": 75,
+    "applicable_expected_checks": 1125,
+    "strict_compliance_pct": 82.4,
+    "accepted_posture_pct": null,
+    "assessment_coverage_pct": 100.0,
+    "status_counts": {
+      "PASS": 927,
+      "FAIL": 198,
+      "APPROVED_EXCEPTION": 0,
+      "N_A": 0,
+      "MANUAL_REVIEW": 0,
+      "ASSESSMENT_ERROR": 0,
+      "NOT_ASSESSED": 0
+    },
+    "fail_severity_counts": {
+      "Critical": 0,
+      "High": 109,
+      "Medium": 81,
+      "Low": 8
+    },
+    "fully_compliant_device_count": 0,
+    "devices_with_findings_count": 75,
+    "critical_finding_count": 0,
+    "assessment_error_count": 0,
+    "approved_exception_count": 0
+  }
+}

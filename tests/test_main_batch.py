@@ -210,3 +210,39 @@ def test_repeated_runs_never_overwrite_previous_archive(tmp_path):
     for run_dir in run_dirs:
         assert (run_dir / "report.html").exists()
     assert (output_dir / "latest" / "report.html").exists()
+
+
+def test_one_control_exception_becomes_assessment_error_not_a_crash(tmp_path, monkeypatch):
+    # A checker throwing an unexpected exception must not take down the rest
+    # of that device's controls, or (in batch mode) the rest of the fleet.
+    import compliance_engine
+
+    original = compliance_engine.ControlEvaluator.evaluate_control
+
+    def _boom(self, control, device_config, golden_config):
+        if control["control_id"] == "control_00006":
+            raise RuntimeError("synthetic failure for testing")
+        return original(self, control, device_config, golden_config)
+
+    monkeypatch.setattr(compliance_engine.ControlEvaluator, "evaluate_control", _boom)
+
+    output_dir = tmp_path / "reports"
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "--device-config", str(DEVICE_CONFIG_PATH),
+            "--golden-config", str(GOLDEN_CONFIG_PATH),
+            "--controls", str(CONTROLS_PATH),
+            "--output-dir", str(output_dir),
+            "--formats", "json",
+        ],
+    )
+    assert result.exit_code in (0, 1)  # did not crash with a traceback
+    data = json.loads((output_dir / "latest" / "report.json").read_text(encoding="utf-8"))
+    by_id = {r["control_id"]: r for r in data["results"]}
+    assert by_id["control_00006"]["status"] == "ASSESSMENT_ERROR"
+    assert "synthetic failure for testing" in by_id["control_00006"]["details"][0]
+    # Every other control still evaluated normally (14 more controls, 1-15 minus 00006).
+    assert len(data["results"]) == 15
+    assert all(r["status"] != "ASSESSMENT_ERROR" for cid, r in by_id.items() if cid != "control_00006")
