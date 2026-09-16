@@ -12,13 +12,13 @@
         "tacacs_servers": [
             {
                 "name": "ACME_TACACS_01",
-                "address": "192.168.100.100",
+                "address": "192.168.100.101",
                 "key": "0123456789",
                 "timeout": 10
             },
             {
                 "name": "ACME_TACACS_02",
-                "address": "192.168.100.101",
+                "address": "192.168.100.102",
                 "key": "0123456789",
                 "timeout": 10
             }
@@ -29,12 +29,9 @@
     "control_00005": {
         "user": "admin_bckp",
         "privilege_level": 15,
-        "password": "0123456789",
-        "secret_psswd": "0123456789"
+        "password": "0123456789"
     },
     "control_00006": {
-        "hostname": "ACME_USA_RT_INT_GOLDEN_01",
-        "domain_name": "acme.com",
         "ssh_version": 2,
         "ssh_timeout": 60,
         "ssh_auth_retries": 3
@@ -43,7 +40,30 @@
         "device_master_key": "0123456789"
     },
     "control_00008": {
-        "acl_name": "ACME_VTY_MGMT_ACL"
+        "acl_name": "ACME_VTY_MGMT_ACL",
+        "acl_rules": [
+            "remark ACME - Deny explicito a rangos de Cloudflare",
+            "deny ip any 173.245.48.0 0.0.15.255",
+            "deny ip any 103.21.244.0 0.0.3.255",
+            "deny ip any 103.22.200.0 0.0.3.255",
+            "deny ip any 103.31.4.0 0.0.3.255",
+            "deny ip any 141.101.64.0 0.0.63.255",
+            "deny ip any 108.162.192.0 0.0.63.255",
+            "deny ip any 190.93.240.0 0.0.15.255",
+            "deny ip any 188.114.96.0 0.0.15.255",
+            "deny ip any 197.234.240.0 0.0.3.255",
+            "deny ip any 198.41.128.0 0.0.127.255",
+            "deny ip any 162.158.0.0 0.1.255.255",
+            "deny ip any 104.16.0.0 0.7.255.255",
+            "deny ip any 104.24.0.0 0.3.255.255",
+            "deny ip any 172.64.0.0 0.7.255.255",
+            "deny ip any 131.0.72.0 0.0.3.255",
+            "remark ACME - Solo se permite trafico SSH",
+            "permit tcp any any eq 22",
+            "permit tcp any eq 22 any",
+            "remark ACME - Deny explicito de cualquier otro protocolo",
+            "deny ip any any log"
+        ]
     },
     "control_00009": {
         "ntp_ip_address": "10.10.10.100",
@@ -71,8 +91,10 @@
     "control_00014": {
         "console_password": "0123456789",
         "vty_password": "0123456789",
-        "start_line_number": 0,
-        "end_line_number": 15,
+        "vty_ranges": [
+            {"start": 0, "end": 4},
+            {"start": 5, "end": 15}
+        ],
         "minutes": 10,
         "seconds": 0,
         "allowed_protocols": "ssh",

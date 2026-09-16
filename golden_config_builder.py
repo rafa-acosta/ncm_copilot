@@ -150,6 +150,10 @@ class GoldenConfigBuilder:
 
         if control_id == "control_00004":
             text, missing = self._render_tacacs(control, values)
+        elif control_id == "control_00008":
+            text, missing = self._render_acl(control, values)
+        elif control_id == "control_00014":
+            text, missing = self._render_vty(control, values)
         else:
             text, missing = self._render_generic(control_id, control, values)
 
@@ -228,6 +232,55 @@ class GoldenConfigBuilder:
             tacacs_group_name=tacacs_group_name,
             source_interface=source_interface,
         )
+        # collapse the blank lines the {% for %}/{% endfor %} lines leave behind
+        rendered = "\n".join(line for line in rendered.splitlines() if line.strip() != "")
+        return rendered, missing
+
+    def _render_acl(self, control: dict, values: dict) -> tuple[str, list[str]]:
+        missing: list[str] = []
+        acl_name = values.get("acl_name")
+        if not acl_name:
+            acl_name = "<MISSING:acl_name>"
+            missing.append("acl_name")
+
+        rules = values.get("acl_rules")
+        if not rules:
+            missing.append("acl_rules")
+            rules = ["<MISSING:acl_rules>"]
+
+        env = Environment(keep_trailing_newline=True)
+        rendered = env.from_string(control["command_template"]).render(acl_name=acl_name, acl_rules=rules)
+        # collapse the blank lines the {% for %}/{% endfor %} lines leave behind
+        rendered = "\n".join(line for line in rendered.splitlines() if line.strip() != "")
+        return rendered, missing
+
+    def _render_vty(self, control: dict, values: dict) -> tuple[str, list[str]]:
+        missing: list[str] = []
+        scalars: dict[str, object] = {}
+        for field_name in ("console_password", "vty_password", "minutes", "seconds", "allowed_protocols", "vty_acl_name"):
+            value = values.get(field_name)
+            if not value and value != 0:
+                value = f"<MISSING:{field_name}>"
+                missing.append(field_name)
+            scalars[field_name] = value
+
+        ranges = values.get("vty_ranges")
+        if not ranges:
+            missing.append("vty_ranges")
+            ranges = [{"start": "<MISSING:vty_ranges>", "end": "<MISSING:vty_ranges>"}]
+        else:
+            filled_ranges = []
+            for i, r in enumerate(ranges):
+                filled = dict(r)
+                for field_name in ("start", "end"):
+                    if not filled.get(field_name) and filled.get(field_name) != 0:
+                        filled[field_name] = f"<MISSING:vty_ranges[{i}].{field_name}>"
+                        missing.append(f"vty_ranges[{i}].{field_name}")
+                filled_ranges.append(filled)
+            ranges = filled_ranges
+
+        env = Environment(keep_trailing_newline=True)
+        rendered = env.from_string(control["command_template"]).render(vty_ranges=ranges, **scalars)
         # collapse the blank lines the {% for %}/{% endfor %} lines leave behind
         rendered = "\n".join(line for line in rendered.splitlines() if line.strip() != "")
         return rendered, missing

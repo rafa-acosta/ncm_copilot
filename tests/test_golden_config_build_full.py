@@ -42,6 +42,30 @@ def test_full_build_renders_expected_content():
     assert "MANUAL REVIEW REQUIRED" in text  # banners
 
 
+def test_full_build_matches_real_ncm_configuration_script():
+    # The whole point of this pass: golden_config.txt (this build's output) is
+    # now the Compliance Checker's source of truth, replacing the previously
+    # hand-maintained golden_config_11_08_2026.txt - which means every real
+    # command line here must match support_files/NCM Configuration Script.txt
+    # (the authoritative production reference, see CLAUDE.md section 11)
+    # exactly. Comments ('!'-prefixed, per this project's own convention -
+    # see CLAUDE.md section 10) and blank lines are excluded from the
+    # comparison since neither Cisco nor this project's ConfigTree parser
+    # treat them as meaningful.
+    builder = _builder()
+    text = builder.build()
+    script_text = (REPO_ROOT / "support_files" / "NCM Configuration Script.txt").read_text(encoding="utf-8")
+
+    def _real_lines(config_text: str) -> list[str]:
+        return [
+            line.strip()
+            for line in config_text.splitlines()
+            if line.strip() and not line.strip().startswith("!") and "NCM Configuration Script" not in line
+        ]
+
+    assert _real_lines(text) == _real_lines(script_text)
+
+
 def test_full_build_follows_render_order():
     builder = _builder()
     text = builder.build()
@@ -78,19 +102,24 @@ def test_generated_config_is_parseable_by_compliance_checker(tmp_path):
     assert tree.exists(r"^snmp-server enable traps")
 
 
-def test_line_vty_appears_exactly_once_with_full_settings():
-    # Regression guard for the control_00008/control_00014 duplicate-stanza bug:
-    # both target 'line vty', so a naive render would emit it twice with only
-    # the second copy carrying login local/exec-timeout/access-class.
+def test_line_vty_appears_twice_with_full_settings_each_range():
+    # Real script structure (NCM Configuration Script.txt): VTY is split into
+    # two ranges ('0 4' and '5 15'), rendered via GoldenConfigBuilder._render_vty's
+    # {% for r in vty_ranges %} loop - each range must independently carry the
+    # full required settings, not just the second/last one rendered.
     builder = _builder()
     text = builder.build()
     tree = ConfigTree(text)
     vty_blocks = tree.blocks(r"^line vty\s")
-    assert len(vty_blocks) == 1
-    children = vty_blocks[0][1:]
-    assert any(c.startswith("transport input ssh") for c in children)
-    assert any(c.startswith("login authentication default") for c in children)
-    assert any(c.startswith("access-class") for c in children)
+    assert len(vty_blocks) == 2
+    assert vty_blocks[0][0] == "line vty 0 4"
+    assert vty_blocks[1][0] == "line vty 5 15"
+    for block in vty_blocks:
+        children = block[1:]
+        assert any(c.startswith("transport input ssh") for c in children)
+        assert any(c.startswith("transport output ssh") for c in children)
+        assert any(c.startswith("login authentication default") for c in children)
+        assert any(c.startswith("access-class") for c in children)
 
 
 def test_self_evaluation_against_compliance_checker():
@@ -102,12 +131,12 @@ def test_self_evaluation_against_compliance_checker():
     # 00016/00017/00018 are expected non-passes here purely because their
     # content was never rendered (they're inactive-by-design in this version),
     # not because of any control_00001-00015 regression:
-    #  - control_00008 (ACL for VTY) renders its own real
-    #    'ip access-list extended ACME_VTY_MGMT_ACL / permit ip any any' block
-    #    (from command_template - the richer Cloudflare-deny-list example only
-    #    lives in config_example, not rendered by Tool 2). Self-compared
-    #    against itself, its content trivially matches -> PASS. control_00014
-    #    only needs that ACL to exist (content is control_00008's job) -> PASS.
+    #  - control_00008 (ACL for VTY) renders the real corporate Cloudflare-
+    #    deny-list ACL (via _render_acl's {% for rule in acl_rules %} loop,
+    #    matching NCM Configuration Script.txt - no longer the old 'permit ip
+    #    any any' placeholder). Self-compared against itself, its content
+    #    trivially matches -> PASS. control_00014 only needs that ACL to
+    #    exist (content is control_00008's job) -> PASS.
     #  - control_00016's mandatory-command items (e.g. 'no ip http server')
     #    are never auto-rendered (GOLDEN_CONFIG_CREATOR.md section 12) even
     #    when 16 WAS in the active set, and it's excluded from the active set

@@ -47,16 +47,13 @@
       "properties": {
         "user": { "type": "string", "minLength": 1 },
         "privilege_level": { "type": "integer", "minimum": 0, "maximum": 15 },
-        "password": { "type": "string", "minLength": 1 },
-        "secret_psswd": { "type": "string", "minLength": 1 }
+        "password": { "type": "string", "minLength": 1 }
       },
       "additionalProperties": false
     },
     "control_00006": {
       "type": "object",
       "properties": {
-        "hostname": { "type": "string", "minLength": 1 },
-        "domain_name": { "type": "string", "minLength": 1 },
         "ssh_version": { "type": "integer", "enum": [1, 2] },
         "ssh_timeout": { "type": "integer", "minimum": 1 },
         "ssh_auth_retries": { "type": "integer", "minimum": 1 }
@@ -70,7 +67,14 @@
     },
     "control_00008": {
       "type": "object",
-      "properties": { "acl_name": { "type": "string", "minLength": 1 } },
+      "properties": {
+        "acl_name": { "type": "string", "minLength": 1 },
+        "acl_rules": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      },
       "additionalProperties": false
     },
     "control_00009": {
@@ -117,8 +121,18 @@
       "properties": {
         "console_password": { "type": "string", "minLength": 1 },
         "vty_password": { "type": "string", "minLength": 1 },
-        "start_line_number": { "type": "integer", "minimum": 0 },
-        "end_line_number": { "type": "integer", "minimum": 0 },
+        "vty_ranges": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "properties": {
+              "start": { "type": "integer", "minimum": 0 },
+              "end": { "type": "integer", "minimum": 0 }
+            },
+            "additionalProperties": false
+          }
+        },
         "minutes": { "type": "integer", "minimum": 0 },
         "seconds": { "type": "integer", "minimum": 0 },
         "allowed_protocols": { "type": "string", "minLength": 1 },

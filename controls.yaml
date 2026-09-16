@@ -13,7 +13,7 @@
   explanation: >
     The hostname has specific characteristics that should be taken into consideration.
     Name parts are separated by an underscore: 1) Company name, 2) Country,
-    3) Type (router, switch, wlc, access-point, pbx, firewall, etc.),
+    3) Type - a short device-class code, not the spelled-out word (RT, SW, WLC, AP, PBX, FW, etc.),
     4) Function (mpls, internet, DSL, etc.), 5) Site, 6) Device number.
   command_template: |
     hostname <hostname>
@@ -28,6 +28,7 @@
   not_compliance_conditions:
     - "Name does not meet the naming convention (COMPANY_COUNTRY_TYPE_FUNCTION_SITE_DEVICENUMBER)"
     - "Hostname is generic (e.g. router, switch, wireless_controller, access_point)"
+    - "Type field spells out the device class instead of using the short code (e.g. 'Router' instead of 'RT')"
   exceptions:
     - "No specific exceptions identified for this control."
   severity: Low
@@ -127,7 +128,7 @@
     {% for server in tacacs_servers %}
     tacacs server {{ server.name }}
      address ipv4 {{ server.address }}
-     key 6 {{ server.key }}
+     key 0 {{ server.key }}
      timeout {{ server.timeout }}
     {% endfor %}
     aaa group server tacacs+ {{ tacacs_group_name }}
@@ -185,12 +186,12 @@
     access in case of network failure or emergency.
   command_template: |
     username <user> privilege <privilege_level> algorithm-type scrypt secret <password>
-    enable secret <secret_psswd>
+  # 'enable secret' is control_00015's line, not this one (see NCM Configuration
+  # Script.txt: control_00005's section is the emergency-user username line only).
   variables:
     - user
     - privilege_level
     - password
-    - secret_psswd
   not_compliance_conditions:
     - "Username should be present"
     - "Enable secret should be present"
@@ -212,7 +213,6 @@
   manual_review: false
   config_example: |
     username admin privilege 15 algorithm-type scrypt secret 0123456789
-    enable secret 0123456789
 
 - control_id: control_00006
   title: "SSH"
@@ -220,13 +220,14 @@
     Prerequisites (hostname, domain) plus RSA key generation and SSH hardening
     parameters for secure remote administrative access.
   command_template: |
-    hostname <hostname>
-    ip domain name <domain_name>
     crypto key zeroize rsa
     crypto key generate rsa modulus 2048
     ip ssh version <ssh_version>
     ip ssh time-out <ssh_timeout>
     ip ssh authentication-retries <ssh_auth_retries>
+  # hostname/domain-name are prerequisites, not rendered here - control_00001/
+  # 00002 already own those lines (see NCM Configuration Script.txt: this
+  # control's own section has no hostname/domain lines).
   variables:
     - ssh_version
     - ssh_timeout
@@ -269,6 +270,7 @@
     - device_master_key
   not_compliance_conditions:
     - "The device master key ('key config-key password-encrypt') is not present"
+    - "The device master key is set to a weak/guessable value (e.g. all-same-digit, too short, or a known-weak literal)"
     - "'password encryption aes' is not enabled"
   exceptions:
     - "No exceptions identified for this control."
@@ -293,10 +295,17 @@
     control_00014 for whether it's actually bound to the VTY lines via
     'access-class').
   command_template: |
-    ip access-list extended <acl_name>
-     permit ip any any
+    ip access-list extended {{ acl_name }}
+    {% for rule in acl_rules %}
+     {{ rule }}
+    {% endfor %}
+  # Pre-converted Jinja (not the <var> convention used by every other control),
+  # same pattern as control_00004's TACACS servers: a real repeating list
+  # (the corporate ACL's rules/remarks, in order), rendered via a {% for %}
+  # loop by the Golden Config Creator. See GOLDEN_CONFIG_CREATOR.md section 12.
   variables:
     - acl_name
+    - acl_rules
   not_compliance_conditions:
     - "ACL does not exist"
     - "ACL name does not match the corporate ACL name in the golden config"
@@ -437,6 +446,7 @@
     - "'snmp-server enable traps' command is missing"
     - "An SNMPv1/v2c community string ('snmp-server community') coexists with the SNMPv3 configuration"
     - "SNMP group name, user name, or trap host does not match the corporate value in the golden config"
+    - "'snmp-server user' references a group name that has no matching 'snmp-server group ... v3 priv' definition (referential integrity)"
   exceptions:
     - "No specific exceptions identified for this control."
   severity: High
@@ -466,7 +476,8 @@
     - message_of_the_day
   not_compliance_conditions:
     - "Banner MOTD is not configured"
-    - "Banner message does not match corporate policy"
+    - "Banner opening and closing delimiter characters do not match, producing a malformed/incomplete banner (mechanically checked)"
+    - "Banner message does not match corporate policy (manual review - wording/legal-language quality is a human judgment call)"
   exceptions:
     - "No specific exceptions identified for this control."
   severity: Medium
@@ -518,34 +529,44 @@
     lines, controlling direct and remote administrative access.
   command_template: |
     line con 0
-     password <console_password>
+     password {{ console_password }}
      login local
-     exec-timeout <minutes> <seconds>
+     exec-timeout {{ minutes }} {{ seconds }}
      logging synchronous
-     exit
-    line vty <start_line_number> <end_line_number>
-     access-class <vty_acl_name> in
-     password <vty_password>
+    !
+    line aux 0
+    !
+    {% for r in vty_ranges %}
+    line vty {{ r.start }} {{ r.end }}
+     access-class {{ vty_acl_name }} in
+     password {{ vty_password }}
      login authentication default
-     exec-timeout <minutes> <seconds>
-     transport input <allowed_protocols>
-     transport output <allowed_protocols>
+     exec-timeout {{ minutes }} {{ seconds }}
      logging synchronous
-     exit
+     exec prompt timestamp
+     transport input {{ allowed_protocols }}
+     transport output {{ allowed_protocols }}
+    !
+    {% endfor %}
   # Console keeps 'login local' (a working fallback if TACACS is unreachable);
   # VTY uses 'login authentication default' to invoke the AAA method list
   # control_00003 sets up - these are intentionally different, not a typo.
+  # Pre-converted Jinja (not the <var> convention used by every other control),
+  # same pattern as control_00004's TACACS servers: a real repeating list (the
+  # corporate VTY line ranges, e.g. '0 4' and '5 15'), rendered via a
+  # {% for %} loop. See GOLDEN_CONFIG_CREATOR.md section 12.
   variables:
     - console_password
-    - start_line_number
-    - end_line_number
+    - minutes
+    - seconds
     - vty_password
     - allowed_protocols
     - vty_acl_name
+    - vty_ranges
   not_compliance_conditions:
     - "Console or VTY passwords are missing"
     - "Console 'login local' is missing, or VTY 'login authentication default' is missing"
-    - "'exec-timeout' is missing"
+    - "'exec-timeout' is missing, set to '0 0' (disables session timeout entirely), or exceeds the corporate policy maximum in the golden config"
     - "'transport input' or 'transport output' is not restricted to secure protocols"
     - "'access-class <name>' on a VTY line is missing the required 'in' direction keyword"
     - "The ACL referenced by 'access-class' does not exist in the configuration (see control_00008 for whether its content is compliant)"
@@ -599,15 +620,17 @@
     Establishes fundamental protection measures, such as the enable password and
     the creation of a local administrator with full privileges.
   command_template: |
-    enable secret <enable_password>
     username <user_name> privilege 15 secret <user_password>
+    enable secret <enable_password>
   variables:
     - enable_password
     - user_name
     - user_password
   not_compliance_conditions:
     - "Enable secret is missing"
-    - "Local administrator with privilege 15 is not created"
+    - "Enable secret is set to a weak/guessable value"
+    - "Local administrator (the username line without 'algorithm-type scrypt' - see control_00005 for the emergency/break-glass user) is not created, or is not privilege 15"
+    - "Local administrator username does not match the corporate standard in the golden config"
   exceptions:
     - "No specific exceptions identified for this control."
   severity: High
@@ -621,6 +644,7 @@
   deterministic_validation: true
   manual_review: false
   config_example: |
+    username admin privilege 15 secret 0123456789
     enable secret 0123456789
 
 - control_id: control_00016

@@ -62,6 +62,48 @@ def test_missing_single_field_within_a_tacacs_server(tmp_path):
     assert device_vars["control_00004"]["tacacs_servers"][0]["key"] in text
 
 
+def test_missing_acl_rules_entirely(tmp_path):
+    # _render_acl mirrors _render_tacacs's missing-value handling for its own
+    # repeating list (acl_rules).
+    device_vars = copy.deepcopy(SAMPLE_DEVICE_VARS)
+    del device_vars["control_00008"]["acl_rules"]
+    vars_path = _write_vars(tmp_path, device_vars)
+
+    builder = GoldenConfigBuilder(CONTROLS_PATH, vars_path, order_path=ORDER_PATH, schema_path=SCHEMA_PATH)
+    text = builder.build()
+
+    assert "<MISSING:acl_rules>" in text
+    assert "control_00008.acl_rules" in builder.missing
+
+
+def test_missing_vty_ranges_entirely(tmp_path):
+    # _render_vty mirrors _render_tacacs's missing-value handling for its own
+    # repeating list (vty_ranges).
+    device_vars = copy.deepcopy(SAMPLE_DEVICE_VARS)
+    del device_vars["control_00014"]["vty_ranges"]
+    vars_path = _write_vars(tmp_path, device_vars)
+
+    builder = GoldenConfigBuilder(CONTROLS_PATH, vars_path, order_path=ORDER_PATH, schema_path=SCHEMA_PATH)
+    text = builder.build()
+
+    assert "<MISSING:vty_ranges>" in text
+    assert "control_00014.vty_ranges" in builder.missing
+
+
+def test_missing_single_field_within_a_vty_range(tmp_path):
+    device_vars = copy.deepcopy(SAMPLE_DEVICE_VARS)
+    del device_vars["control_00014"]["vty_ranges"][1]["end"]
+    vars_path = _write_vars(tmp_path, device_vars)
+
+    builder = GoldenConfigBuilder(CONTROLS_PATH, vars_path, order_path=ORDER_PATH, schema_path=SCHEMA_PATH)
+    text = builder.build()
+
+    assert "<MISSING:vty_ranges[1].end>" in text
+    assert "control_00014.vty_ranges[1].end" in builder.missing
+    # the untouched range's start must still render normally
+    assert "line vty 0 4" in text
+
+
 def test_cli_strict_mode_aborts_and_writes_nothing(tmp_path):
     device_vars = copy.deepcopy(SAMPLE_DEVICE_VARS)
     del device_vars["control_00002"]["company_name"]

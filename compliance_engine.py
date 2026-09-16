@@ -55,6 +55,14 @@ ACTIVE_CONTROL_IDS = {f"control_{i:05d}" for i in range(1, 16)}
 
 _WEAK_SECRET_TYPES = {"0", "4", "5", "7"}
 
+# Generic, not tuned to any single known test value - a small set of
+# universally-known-weak literals (case-insensitive) plus the length/
+# uniformity heuristics in _is_weak_secret_value below catch the rest.
+_WEAK_SECRET_LITERALS = {
+    "password", "changeme", "admin", "cisco", "letmein", "qwerty",
+    "welcome", "default",
+}
+
 _MANDATORY_COMMAND_PATTERNS = [
     (r"^no ip http server", "'no ip http server' (disable unencrypted web management)"),
     (r"^no ip http secure-server", "'no ip http secure-server' (disable HTTPS web management unless explicitly required)"),
@@ -117,6 +125,29 @@ class ControlEvaluator:
         return self._result(control, STATUS_FAIL, "; ".join(failures), failures)
 
     @staticmethod
+    def _is_weak_secret_value(value: str) -> bool:
+        """Generic weak-secret heuristic - not hardcoded to any single test value.
+
+        Flags: all-identical-character strings ('111111', '0000'), values
+        shorter than this project's own 'security passwords min-length 10'
+        standard (control_00013) minus a small margin (<8 chars, e.g. '1234'),
+        and a small set of universally-known-weak literals. A 10-digit
+        sequential placeholder like '0123456789' (used throughout this
+        project's fixtures as a device-unique example value) is intentionally
+        NOT flagged - it's long and not uniform/known-weak.
+        """
+        if not value:
+            return True
+        stripped = value.strip()
+        if len(set(stripped)) == 1:
+            return True
+        if len(stripped) < 8:
+            return True
+        if stripped.lower() in _WEAK_SECRET_LITERALS:
+            return True
+        return False
+
+    @staticmethod
     def _result(control: dict, status: str, evidence_found: str, details: list[str]) -> ControlResult:
         return ControlResult(
             control_id=control["control_id"],
@@ -149,6 +180,16 @@ class ControlEvaluator:
                 "COMPANY_COUNTRY_TYPE_FUNCTION_SITE_DEVICENUMBER convention "
                 "(expected at least 6 underscore-separated parts)."
             )
+        elif len(parts) >= 3:
+            # Part 3 (Type) must be a short device-class code (RT, SW, WLC, AP,
+            # PBX, FW, ...), not the spelled-out word - a long alphabetic
+            # segment here means someone typed 'Router' instead of 'RT'.
+            type_segment = parts[2]
+            if type_segment.isalpha() and len(type_segment) > 4:
+                failures.append(
+                    f"Hostname '{hostname}': Type field '{type_segment}' should be a short "
+                    "device-class code (e.g. 'RT', 'SW', 'WLC', 'AP', 'PBX', 'FW'), not a spelled-out word."
+                )
         return failures
 
     def _check_control_00002(self, device: ConfigTree, golden: ConfigTree, control: dict) -> list[str]:
@@ -344,13 +385,15 @@ class ControlEvaluator:
             failures.append("Hostname is not configured.")
         if not device.exists(r"^ip domain[- ]name\s"):
             failures.append("IP domain-name is not configured.")
-        zeroized = device.exists(r"^crypto key zeroize rsa")
-        regenerated = device.exists(r"^crypto key generate rsa modulus \d+")
-        ssh_enabled = device.exists(r"^ip ssh version\s")
-        if (zeroized and not regenerated) or not ssh_enabled:
-            failures.append(
-                "RSA key generation (modulus 2048) is missing or RSA keys were zeroized without regeneration."
-            )
+        # Unconditional presence check - SSH cannot function without an RSA
+        # keypair regardless of whether the device ever zeroized one. A
+        # zeroize-then-regenerate later in the file is the normal
+        # remediation flow and is fine; only "zeroized with no regeneration
+        # anywhere" is a real problem, which this same check already catches.
+        if not device.exists(r"^crypto key generate rsa modulus \d+"):
+            failures.append("'crypto key generate rsa modulus <bits>' is missing - SSH cannot function without it.")
+        if not device.exists(r"^ip ssh version\s"):
+            failures.append("'ip ssh version' is not configured - SSH is not enabled.")
 
         for label, pattern in (
             ("ip ssh version", r"^ip ssh version\s"),
@@ -368,8 +411,15 @@ class ControlEvaluator:
 
     def _check_control_00007(self, device: ConfigTree, golden: ConfigTree, control: dict) -> list[str]:
         failures = []
-        if not device.exists(r"^key config-key password-encrypt\s+\S+"):
+        key_line = device.first_text(r"^key config-key password-encrypt\s+\S+")
+        if not key_line:
             failures.append("'key config-key password-encrypt <device_master_key>' is missing.")
+        else:
+            master_key = key_line.split()[-1]
+            if self._is_weak_secret_value(master_key):
+                failures.append(
+                    "'key config-key password-encrypt' uses a weak/guessable master key value."
+                )
         if not device.exists(r"^password encryption aes"):
             failures.append("'password encryption aes' is missing.")
         return failures
@@ -399,6 +449,19 @@ class ControlEvaluator:
         failures = []
         if device_name != golden_name:
             failures.append(f"ACL name '{device_name}' does not match the corporate ACL name '{golden_name}'.")
+
+        # Semantic check independent of golden's exact wording: a wildcard
+        # mask of 255.255.255.255 wildcards every address bit, so it is
+        # functionally identical to 'any' no matter what network value
+        # precedes it (conventionally 0.0.0.0) - catches this even if a
+        # future golden ACL happens to use the same notation somewhere.
+        unrestricted_wildcard = re.compile(r"(?:\d{1,3}\.){3}\d{1,3}\s+255\.255\.255\.255")
+        for rule in device_rules:
+            if rule.startswith("permit") and unrestricted_wildcard.search(rule):
+                failures.append(
+                    f"ACL '{device_name}' rule '{rule}' uses a wildcard mask (255.255.255.255) that is "
+                    "functionally equivalent to 'any', defeating the purpose of the management ACL."
+                )
 
         if device_rules != golden_rules:
             for i, expected in enumerate(golden_rules):
@@ -507,6 +570,22 @@ class ControlEvaluator:
                 "An SNMPv1/v2c community string ('snmp-server community') coexists with the SNMPv3 configuration."
             )
 
+        # Referential-integrity check, mirroring the TACACS 'server name'
+        # check in _check_control_00004: the group and user lines are each
+        # individually well-formed on their own, but the user's own group
+        # reference (token 3: 'snmp-server user <name> <group> v3 ...') must
+        # also point at a group that actually exists - a typo here means the
+        # user silently gets no group/view, which "does the group line
+        # exist" and "does the user line exist" checked independently cannot
+        # catch.
+        if user_line:
+            referenced_group = user_line.split()[3]
+            if not device.exists(rf"^snmp-server group\s+{re.escape(referenced_group)}\s+v3\s+priv"):
+                failures.append(
+                    f"'snmp-server user' references group '{referenced_group}', which has no matching "
+                    f"'snmp-server group {referenced_group} v3 priv' definition."
+                )
+
         golden_group_line = golden.first_text(r"^snmp-server group\s+\S+\s+v3\s+priv")
         if group_line and golden_group_line:
             actual, expected = group_line.split()[2], golden_group_line.split()[2]
@@ -527,11 +606,23 @@ class ControlEvaluator:
         return failures
 
     def _check_control_00012(self, device: ConfigTree, golden: ConfigTree, control: dict) -> list[str]:
-        # Presence-only: whether the banner's wording meets corporate legal/policy
-        # language is a human judgment call this checker doesn't attempt - see
-        # controls.yaml's manual_review flag, which still gates Tool 2's rendering.
-        if not device.exists(r"^banner motd\b"):
+        # Presence-only for wording: whether the banner's content meets corporate
+        # legal/policy language is a human judgment call this checker doesn't
+        # attempt - see controls.yaml's manual_review flag, which still gates
+        # Tool 2's rendering. Delimiter well-formedness IS mechanically
+        # checkable, though, and is done here off the raw config text
+        # (device.text) rather than ConfigTree's line-object view - Cisco
+        # 'banner motd <delim> ... <delim>' isn't line-structured the way
+        # every other command in this project is.
+        match = re.search(r"^banner motd\s+(\S)(.*)$", device.text, re.MULTILINE)
+        if not match:
             return ["'banner motd' is not configured."]
+        delimiter, rest_of_line = match.group(1), match.group(2)
+        if delimiter not in rest_of_line:
+            return [
+                f"'banner motd' opening delimiter '{delimiter}' has no matching closing '{delimiter}' - "
+                "the banner is malformed/incomplete."
+            ]
         return []
 
     def _check_control_00013(self, device: ConfigTree, golden: ConfigTree, control: dict) -> list[str]:
@@ -547,6 +638,37 @@ class ControlEvaluator:
             failures.append("'service password-encryption' is missing.")
         return failures
 
+    @staticmethod
+    def _exec_timeout_policy_failure(children: list[str], golden_children: list[str] | None, label: str) -> str | None:
+        """Presence AND value check for 'exec-timeout <minutes> <seconds>'.
+
+        'exec-timeout 0 0' is a special Cisco IOS value meaning "never time
+        out" - always non-compliant regardless of golden. Beyond that, the
+        minutes value is compared against golden's own value as a policy
+        maximum (not a literal-equality check) - a shorter timeout than
+        golden is stricter, not non-compliant.
+        """
+        line = next((c for c in children if c.startswith("exec-timeout")), None)
+        if not line:
+            return f"'{label}': 'exec-timeout' is missing."
+        parts = line.split()
+        if len(parts) < 2 or not parts[1].isdigit():
+            return None
+        minutes = int(parts[1])
+        if minutes == 0:
+            return f"'{label}': '{line}' disables session timeout entirely (sessions never expire)."
+        if golden_children:
+            golden_line = next((c for c in golden_children if c.startswith("exec-timeout")), None)
+            golden_parts = golden_line.split() if golden_line else []
+            if len(golden_parts) > 1 and golden_parts[1].isdigit():
+                golden_minutes = int(golden_parts[1])
+                if minutes > golden_minutes:
+                    return (
+                        f"'{label}': '{line}' ({minutes} minute(s)) exceeds the corporate policy "
+                        f"maximum of {golden_minutes} minute(s)."
+                    )
+        return None
+
     def _check_control_00014(self, device: ConfigTree, golden: ConfigTree, control: dict) -> list[str]:
         # ACL content (rule-by-rule compliance) is control_00008's job now -
         # this control only confirms VTY actually binds to a real, existing
@@ -554,6 +676,8 @@ class ControlEvaluator:
         failures = []
 
         con_blocks = device.blocks(r"^line con\s")
+        golden_con_blocks = golden.blocks(r"^line con\s")
+        golden_con_children = golden_con_blocks[0][1:] if golden_con_blocks else None
         if not con_blocks:
             failures.append("No 'line console 0' configuration found.")
         else:
@@ -562,8 +686,9 @@ class ControlEvaluator:
                 failures.append(f"'{parent}': password is missing.")
             if not any(c.startswith("login local") for c in children):
                 failures.append(f"'{parent}': 'login local' is missing.")
-            if not any(c.startswith("exec-timeout") for c in children):
-                failures.append(f"'{parent}': 'exec-timeout' is missing.")
+            exec_timeout_failure = self._exec_timeout_policy_failure(children, golden_con_children, parent)
+            if exec_timeout_failure:
+                failures.append(exec_timeout_failure)
 
         # Evaluated independently, per block - a device may legitimately split
         # VTY lines across multiple ranges (e.g. 'line vty 0 4' + 'line vty 5
@@ -571,6 +696,8 @@ class ControlEvaluator:
         vty_blocks = device.blocks(r"^line vty\s")
         if not vty_blocks:
             failures.append("No 'line vty' configuration found.")
+        golden_vty_blocks = golden.blocks(r"^line vty\s")
+        golden_vty_children = golden_vty_blocks[0][1:] if golden_vty_blocks else None
 
         checked_acls: set[str] = set()
         for block in vty_blocks:
@@ -579,8 +706,9 @@ class ControlEvaluator:
                 failures.append(f"'{parent}': password is missing.")
             if not any(c.startswith("login authentication default") for c in children):
                 failures.append(f"'{parent}': 'login authentication default' is missing.")
-            if not any(c.startswith("exec-timeout") for c in children):
-                failures.append(f"'{parent}': 'exec-timeout' is missing.")
+            exec_timeout_failure = self._exec_timeout_policy_failure(children, golden_vty_children, parent)
+            if exec_timeout_failure:
+                failures.append(exec_timeout_failure)
 
             for direction in ("input", "output"):
                 prefix = f"transport {direction}"
@@ -605,11 +733,46 @@ class ControlEvaluator:
 
     def _check_control_00015(self, device: ConfigTree, golden: ConfigTree, control: dict) -> list[str]:
         failures = []
-        if not device.exists(r"^enable secret\s"):
+
+        # A device config is applied sequentially - if 'enable secret' is
+        # configured more than once (e.g. once for control_00005's own
+        # section, again for this control's section), the LAST occurrence is
+        # the one actually in effect, not the first one found in the file.
+        enable_secret_lines = device.all_text(r"^enable secret\s")
+        if not enable_secret_lines:
             failures.append("Enable secret is missing.")
-        priv15_users = [line for line in device.all_text(r"^username\s") if re.search(r"privilege\s+15\b", line)]
-        if not priv15_users:
+        else:
+            enable_secret_line = enable_secret_lines[-1]
+            secret_match = re.search(r"^enable secret\s+(?:\d+\s+)?(\S+)$", enable_secret_line)
+            if secret_match and self._is_weak_secret_value(secret_match.group(1)):
+                failures.append("'enable secret' uses a weak/guessable value.")
+
+        # The admin-standard local user is identified as the username line
+        # WITHOUT 'algorithm-type scrypt' - the inverse of how control_00005's
+        # emergency/break-glass user is identified (that one always HAS it).
+        # Checking "any username with privilege 15 anywhere" was satisfied by
+        # control_00005's own emergency user regardless of what this
+        # control's own section actually configured - identifying the
+        # specific line closes that gap.
+        username_lines = device.all_text(r"^username\s")
+        admin_lines = [line for line in username_lines if "algorithm-type scrypt" not in line]
+        if not admin_lines:
             failures.append("Local administrator with privilege 15 is not created.")
+        else:
+            golden_admin_line = next(
+                (line for line in golden.all_text(r"^username\s") if "algorithm-type scrypt" not in line), None
+            )
+            golden_name = golden_admin_line.split()[1] if golden_admin_line else None
+            for line in admin_lines:
+                name = line.split()[1]
+                priv_match = re.search(r"privilege\s+(\d+)", line)
+                priv = priv_match.group(1) if priv_match else None
+                if priv != "15":
+                    failures.append(f"Local administrator '{name}': privilege level is '{priv}', expected 15.")
+                if golden_name and name != golden_name:
+                    failures.append(
+                        f"Local administrator username '{name}' does not match the corporate standard '{golden_name}'."
+                    )
         return failures
 
     def _check_control_00016(self, device: ConfigTree, golden: ConfigTree, control: dict) -> list[str]:

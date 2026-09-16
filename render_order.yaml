@@ -10,10 +10,10 @@
 - control_00002  # Domain
 - control_00013  # Passwords (global policy, min-length + encryption)
 - control_00007  # Global password encryption (protects the TACACS/routing keys below)
-- control_00003  # AAA
-- control_00004  # TACACS+
 - control_00005  # Local and emergency users
 - control_00015  # Local user and enable secret (admin user)
+- control_00004  # TACACS+
+- control_00003  # AAA
 - control_00006  # SSH
 - control_00008  # ACL for VTY
 - control_00014  # VTY & Console Lines

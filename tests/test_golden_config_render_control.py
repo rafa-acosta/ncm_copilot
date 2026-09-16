@@ -104,11 +104,27 @@ def test_control_00018_always_renders_as_manual_review(tmp_path):
 def test_control_00008_renders_its_own_acl_block(tmp_path):
     # control_00008 (ACL for VTY) is a standalone existence-only check now - it
     # no longer targets 'line vty' at all, so it's no longer subsumed by
-    # control_00014 and renders its own real ACL block via the generic engine.
-    builder = _builder({"control_00008": {"acl_name": "ACME_VTY_MGMT_ACL"}}, tmp_path)
+    # control_00014 and renders its own real ACL block, via the same
+    # {% for %}-loop special case as control_00004's TACACS servers (see
+    # GoldenConfigBuilder._render_acl), matching the real corporate ACL
+    # (NCM Configuration Script.txt) rather than a placeholder.
+    device_vars = {
+        "control_00008": {
+            "acl_name": "ACME_VTY_MGMT_ACL",
+            "acl_rules": [
+                "remark deny Cloudflare ranges",
+                "deny ip any 173.245.48.0 0.0.15.255",
+                "permit tcp any any eq 22",
+                "deny ip any any log",
+            ],
+        }
+    }
+    builder = _builder(device_vars, tmp_path)
     result = builder.render_control("control_00008")
     assert "ip access-list extended ACME_VTY_MGMT_ACL" in result.text
-    assert "permit ip any any" in result.text
+    assert "deny ip any 173.245.48.0 0.0.15.255" in result.text
+    assert "permit tcp any any eq 22" in result.text
+    assert "deny ip any any log" in result.text
     assert "line vty" not in result.text
     assert result.missing == []
 
@@ -131,11 +147,11 @@ def test_ssh_render_drops_destructive_zeroize_line(tmp_path):
     # golden_config.txt is a reusable baseline that may be re-applied to an
     # already-provisioned device - zeroizing there would delete working RSA
     # keys and break SSH. The renderer must drop it while still emitting the
-    # regeneration + ip ssh lines.
+    # regeneration + ip ssh lines. hostname/domain-name are NOT rendered here
+    # (control_00001/00002 own those lines - see NCM Configuration Script.txt),
+    # so control_00006's device_vars carries only its own ssh_* fields.
     device_vars = {
         "control_00006": {
-            "hostname": "RTR01",
-            "domain_name": "acme.com",
             "ssh_version": 2,
             "ssh_timeout": 60,
             "ssh_auth_retries": 3,
