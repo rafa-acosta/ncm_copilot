@@ -11,6 +11,7 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 from click.testing import CliRunner
 
 import remediation_advisor as ra
@@ -46,6 +47,15 @@ def _real_controls_by_id() -> dict[str, dict]:
     return ra.load_controls_by_id(CONTROLS_PATH)
 
 
+def _write_report(tmp_path: Path, dest: Path, device_name: str) -> Path:
+    """Build a real report (via _real_report) but with a custom device_name,
+    and write it to `dest` (e.g. tmp_path / 'reports' / device_name / 'report.json')."""
+    report = _real_report(tmp_path).model_copy(update={"device_name": device_name})
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(report.model_dump_json(), encoding="utf-8")
+    return dest
+
+
 def _real_report(tmp_path: Path) -> ComplianceReport:
     """Generate a real Compliance Checker JSON report from the sample configs."""
     import yaml
@@ -64,6 +74,40 @@ def _real_report(tmp_path: Path) -> ComplianceReport:
         device_config_path=str(DEVICE_CONFIG_PATH),
         golden_config_path=str(GOLDEN_CONFIG_PATH),
     )
+
+
+# ---- discover_report_paths ----------------------------------------------------
+
+def test_discover_report_paths_single_device_layout(tmp_path):
+    single_dir = tmp_path / "single"
+    _write_report(tmp_path, single_dir / "report.json", "solo_device")
+    paths = ra.discover_report_paths(single_dir)
+    assert paths == [single_dir / "report.json"]
+
+
+def test_discover_report_paths_batch_layout(tmp_path):
+    root = tmp_path / "batch"
+    _write_report(tmp_path, root / "device_a" / "report.json", "device_a")
+    _write_report(tmp_path, root / "device_b" / "report.json", "device_b")
+    paths = ra.discover_report_paths(root)
+    assert paths == sorted(paths)
+    assert {p.parent.name for p in paths} == {"device_a", "device_b"}
+
+
+def test_discover_report_paths_raises_when_nothing_found(tmp_path):
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    with pytest.raises(FileNotFoundError):
+        ra.discover_report_paths(empty)
+
+
+def test_discover_report_paths_does_not_recurse_into_historical_runs(tmp_path):
+    # reports/<timestamp>/<device>/report.json two levels deep - must NOT be
+    # picked up if --reports-dir is pointed at the archive root by mistake.
+    root = tmp_path / "reports"
+    _write_report(tmp_path, root / "20260101-000000" / "device_a" / "report.json", "device_a")
+    with pytest.raises(FileNotFoundError):
+        ra.discover_report_paths(root)
 
 
 # ---- select_findings ---------------------------------------------------------
@@ -310,3 +354,154 @@ def test_cli_default_output_archives_and_refreshes_latest(tmp_path, monkeypatch)
     run_dirs = [p for p in output_dir.iterdir() if p.is_dir() and p.name != "latest"]
     assert len(run_dirs) == 1
     assert (run_dirs[0] / "briefing.md").exists()
+
+
+# ---- CLI batch mode (--reports-dir) --------------------------------------------
+
+def test_cli_batch_briefs_every_device(tmp_path, monkeypatch):
+    reports_dir = tmp_path / "reports"
+    _write_report(tmp_path, reports_dir / "device_a" / "report.json", "device_a")
+    _write_report(tmp_path, reports_dir / "device_b" / "report.json", "device_b")
+
+    monkeypatch.setattr(agent_assisted_coding_advise, "select_backend", lambda *a, **k: ("llamacpp", "http://fake/v1", "phi-3-mini-4k-instruct"))
+    monkeypatch.setattr(agent_assisted_coding_advise, "LLMClient", lambda *a, **k: _fake_llm_client())
+    monkeypatch.chdir(tmp_path)
+
+    output_dir = tmp_path / "briefings"
+    runner = CliRunner()
+    result = runner.invoke(
+        agent_assisted_coding_advise.main,
+        [
+            "--reports-dir", str(reports_dir),
+            "--controls", str(CONTROLS_PATH),
+            "--backend", "auto",
+            "--output-dir", str(output_dir),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Briefed 2/2 device(s)." in result.output
+    for name in ("device_a", "device_b"):
+        assert (output_dir / "latest" / name / "briefing.md").exists()
+        assert (output_dir / "latest" / name / "briefing.json").exists()
+    run_dirs = [p for p in output_dir.iterdir() if p.is_dir() and p.name != "latest"]
+    assert len(run_dirs) == 1
+
+
+def test_cli_batch_selects_backend_once_with_device_count(tmp_path, monkeypatch):
+    reports_dir = tmp_path / "reports"
+    for name in ("device_a", "device_b", "device_c"):
+        _write_report(tmp_path, reports_dir / name / "report.json", name)
+
+    calls = []
+
+    def _spy_select_backend(*args, **kwargs):
+        calls.append(kwargs.get("device_count", args[1] if len(args) > 1 else None))
+        return "llamacpp", "http://fake/v1", "phi-3-mini-4k-instruct"
+
+    monkeypatch.setattr(agent_assisted_coding_advise, "select_backend", _spy_select_backend)
+    monkeypatch.setattr(agent_assisted_coding_advise, "LLMClient", lambda *a, **k: _fake_llm_client())
+
+    runner = CliRunner()
+    result = runner.invoke(
+        agent_assisted_coding_advise.main,
+        [
+            "--reports-dir", str(reports_dir),
+            "--controls", str(CONTROLS_PATH),
+            "--output-dir", str(tmp_path / "briefings"),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert calls == [3]  # selected exactly once, for the whole batch
+
+
+def test_cli_report_and_reports_dir_together_is_usage_error(tmp_path):
+    report_path = tmp_path / "report.json"
+    report_path.write_text("{}", encoding="utf-8")
+    reports_dir = tmp_path / "reports"
+    reports_dir.mkdir()
+
+    runner = CliRunner()
+    result = runner.invoke(
+        agent_assisted_coding_advise.main,
+        [
+            "--report", str(report_path),
+            "--reports-dir", str(reports_dir),
+            "--controls", str(CONTROLS_PATH),
+        ],
+    )
+    assert result.exit_code != 0
+    assert "exactly one" in result.output.lower()
+
+
+def test_cli_neither_report_nor_reports_dir_is_usage_error():
+    runner = CliRunner()
+    result = runner.invoke(agent_assisted_coding_advise.main, ["--controls", str(CONTROLS_PATH)])
+    assert result.exit_code != 0
+    assert "exactly one" in result.output.lower()
+
+
+def test_cli_output_md_with_reports_dir_is_usage_error(tmp_path):
+    reports_dir = tmp_path / "reports"
+    _write_report(tmp_path, reports_dir / "device_a" / "report.json", "device_a")
+
+    runner = CliRunner()
+    result = runner.invoke(
+        agent_assisted_coding_advise.main,
+        [
+            "--reports-dir", str(reports_dir),
+            "--controls", str(CONTROLS_PATH),
+            "--output-md", str(tmp_path / "briefing.md"),
+        ],
+    )
+    assert result.exit_code != 0
+    assert "single-device only" in result.output.lower()
+
+
+def test_cli_batch_one_malformed_report_is_skipped_others_still_briefed(tmp_path, monkeypatch):
+    reports_dir = tmp_path / "reports"
+    _write_report(tmp_path, reports_dir / "device_a" / "report.json", "device_a")
+    (reports_dir / "device_bad").mkdir(parents=True)
+    (reports_dir / "device_bad" / "report.json").write_text("not valid json", encoding="utf-8")
+
+    monkeypatch.setattr(agent_assisted_coding_advise, "select_backend", lambda *a, **k: ("llamacpp", "http://fake/v1", "phi-3-mini-4k-instruct"))
+    monkeypatch.setattr(agent_assisted_coding_advise, "LLMClient", lambda *a, **k: _fake_llm_client())
+
+    output_dir = tmp_path / "briefings"
+    runner = CliRunner()
+    result = runner.invoke(
+        agent_assisted_coding_advise.main,
+        [
+            "--reports-dir", str(reports_dir),
+            "--controls", str(CONTROLS_PATH),
+            "--output-dir", str(output_dir),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output  # partial success - not a total failure
+    assert "Briefed 1/2 device(s) (1 skipped due to errors)." in result.output
+    assert (output_dir / "latest" / "device_a" / "briefing.md").exists()
+    assert not (output_dir / "latest" / "device_bad").exists()
+
+
+def test_cli_batch_all_reports_failing_is_a_hard_failure(tmp_path, monkeypatch):
+    reports_dir = tmp_path / "reports"
+    (reports_dir / "device_bad").mkdir(parents=True)
+    (reports_dir / "device_bad" / "report.json").write_text("not valid json", encoding="utf-8")
+
+    monkeypatch.setattr(agent_assisted_coding_advise, "select_backend", lambda *a, **k: ("llamacpp", "http://fake/v1", "phi-3-mini-4k-instruct"))
+    monkeypatch.setattr(agent_assisted_coding_advise, "LLMClient", lambda *a, **k: _fake_llm_client())
+
+    runner = CliRunner()
+    result = runner.invoke(
+        agent_assisted_coding_advise.main,
+        [
+            "--reports-dir", str(reports_dir),
+            "--controls", str(CONTROLS_PATH),
+            "--output-dir", str(tmp_path / "briefings"),
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "Briefed 0/1 device(s) (1 skipped due to errors)." in result.output

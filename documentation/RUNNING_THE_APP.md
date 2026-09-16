@@ -198,18 +198,24 @@ Turns a Compliance Checker JSON report into an LLM-written remediation briefing.
 ### All flags
 
 ```
---report FILE                    Compliance Checker JSON report (main.py --formats json). [required]
+--report FILE                    A single Compliance Checker JSON report (main.py --formats json).
+                                  Mutually exclusive with --reports-dir.
+--reports-dir DIRECTORY          A Tool 1 run's output root (e.g. reports/latest) to brief every
+                                  device in, in batch - reports_dir/report.json (single device) or
+                                  reports_dir/<device>/report.json (batch layout). Not recursive.
+                                  Mutually exclusive with --report.
 --controls FILE                  Path to controls.yaml.                                   [required]
 --backend TEXT                   'auto', or a name from local-llm/config.yaml's backends
                                   registry (e.g. qwen_coder, phi4_mini).        [default: auto]
 --output-dir DIRECTORY           Historic archive root, used unless --output-md/--output-json
-                                  is given.                              [default: briefings]
---output-md FILE                 Write Markdown to exactly this path instead (bypasses
-                                  the --output-dir archive).
---output-json FILE               Write JSON to exactly this path instead (bypasses
-                                  the --output-dir archive).
+                                  is given (single-device only).         [default: briefings]
+--output-md FILE                 Single-device only. Write Markdown to exactly this path instead
+                                  (bypasses the --output-dir archive).
+--output-json FILE               Single-device only. Write JSON to exactly this path instead
+                                  (bypasses the --output-dir archive).
 --severity-min [low|medium|high] Only include findings at or above this severity.
 --device-vars FILE                Optional - variables already set there aren't flagged as missing.
+                                  Shared across every device in batch mode.
 --help
 ```
 
@@ -235,6 +241,19 @@ python agent_assisted_coding_advise.py --report reports/latest/report.json --con
 ```
 Giving `--output-md`/`--output-json` explicitly bypasses the `briefings/` archive entirely — only `briefing_high.md` and `briefing_high.json` are written, no timestamped folder or `latest/` mirror is created. Useful for scripting/automation that expects one fixed, predictable filename.
 
+### Scenario: batch — brief every device from a fleet audit
+
+```bash
+python main.py --device-config-dir device_configs --golden-config golden_config.txt \
+  --controls controls.yaml --output-dir ./reports --formats json
+
+python agent_assisted_coding_advise.py \
+  --reports-dir reports/latest \
+  --controls controls.yaml \
+  --backend auto
+```
+**Output:** `briefings/<timestamp>/<device_name>/briefing.md` and `briefing.json` for every device under `reports/latest/` that has at least one FAIL, plus a refreshed `briefings/latest/` mirror — same per-device-subfolder shape as Tool 1's own batch mode. The LLM backend is selected **once** for the whole batch (see `llm_client.select_backend`'s `device_count` parameter — it prefers a `fast_default`-role backend over a `specialist` one once more than one device is being briefed) and reused across every device, not re-selected per device. One device's report failing to load or brief (a malformed `report.json`, an LLM error mid-call) skips just that device and the batch continues — the closing summary line reports how many were skipped, e.g. `Briefed 74/75 device(s) (1 skipped due to errors).` **Exit code:** `0` if at least one device was briefed, `1` only if every device failed (nothing usable was written). No combined "fleet briefing" document is produced — each device's briefing stays its own file, same as Tool 1's per-device `report.json`/`report.html`.
+
 ### What the LLM does and doesn't do
 
 The LLM only ever writes the 2–3 sentence "what's missing and why" explanation. It is **never shown the remediation command text** — the tool inserts `controls.yaml`'s `config_example` field into the briefing verbatim itself. This is a deliberate strengthening beyond a literal reading of the original spec (`COMPLIANCE_ANALYZER_PROMPT.md`), which described the LLM "restating" the commands; giving the LLM the commands to restate would only be a probabilistic guarantee against alteration, whereas never showing them to it at all makes "no LLM-generated command text" true by construction. See `remediation_advisor.py`'s module docstring and `tests/test_remediation_advisor.py`'s command-block-verbatim tests.
@@ -246,6 +265,10 @@ The LLM only ever writes the 2–3 sentence "what's missing and why" explanation
 | `Error: No local LLM backend is reachable. ...` (lists launch hints) | No `local-llm/serve_*.sh` is running — see §6. |
 | `Error: Unknown backend '<name>'. Known backends: ...` | Typo'd `--backend`, or that name isn't in `local-llm/config.yaml`. |
 | `pydantic.ValidationError` while loading `--report` | The JSON file isn't a valid `ComplianceReport` (wrong tool produced it, or it's corrupted). |
+| `Provide exactly one of --report or --reports-dir.` | Both or neither were given. |
+| `No report.json found directly under <dir> ...` | `--reports-dir` doesn't have `report.json` or `*/report.json` directly inside it — check you're pointing at a specific run (e.g. `reports/latest`), not the whole `reports/` archive. |
+| `--output-md/--output-json are single-device only - not valid with --reports-dir.` | Drop `--output-md`/`--output-json` in batch mode, or use `--report` for a single device. |
+| `WARNING: skipped <path> - ...` on stderr, batch continues | That one device's report failed to load or brief - see the closing summary line for the total skipped count. |
 
 ## 5. Tool 5 — Compliance Report Generator (`compliance_report_main.py`)
 
@@ -351,7 +374,7 @@ Every KPI, chart, and table is computed from whatever `--reports-dir` actually c
 
 ## 7. Batch reports and the LLM advisor
 
-The Remediation Advisor currently reads **one** device's `report.json` at a time — `main.py`'s batch mode produces a `report.json` per device (no combined multi-device JSON yet; only the HTML `fleet_report.html` is a true fleet-level artifact today). To brief multiple devices, run `agent_assisted_coding_advise.py` once per device's `report.json`.
+`main.py`'s batch mode produces a `report.json` per device (no combined multi-device JSON; only the HTML `fleet_report.html` is a true fleet-level artifact for Tool 1). The Remediation Advisor has its own batch mode for this layout - `agent_assisted_coding_advise.py --reports-dir reports/latest` briefs every device in one run, same directory-discovery convention as Tool 6's `--reports-dir` (see section 4's batch scenario above for the full example and output shape). There's still no combined "fleet briefing" document - each device gets its own `briefing.md`/`briefing.json`, same as Tool 1's own per-device `report.json`/`report.html`.
 
 ## 8. Local LLM backend (`local-llm/`)
 

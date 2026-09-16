@@ -58,6 +58,27 @@ def load_report(path: str | Path) -> ComplianceReport:
         return ComplianceReport.model_validate_json(f.read())
 
 
+def discover_report_paths(reports_dir: str | Path) -> list[Path]:
+    """Find every report.json directly under `reports_dir` - either
+    `reports_dir/report.json` (single device) or `reports_dir/*/report.json`
+    (main.py batch mode's per-device subfolders). Deliberately not recursive -
+    pointing this at a whole archive root (e.g. `reports/` instead of
+    `reports/latest`) would otherwise silently pull in every historical run's
+    devices too. Same convention as compliance_dashboard_builder.load_findings."""
+    reports_dir = Path(reports_dir)
+    report_paths = []
+    single = reports_dir / "report.json"
+    if single.exists():
+        report_paths.append(single)
+    report_paths.extend(sorted(reports_dir.glob("*/report.json")))
+    if not report_paths:
+        raise FileNotFoundError(
+            f"No report.json found directly under {reports_dir} "
+            "(expected reports_dir/report.json or reports_dir/<device>/report.json)."
+        )
+    return report_paths
+
+
 def load_controls_by_id(path: str | Path) -> dict[str, dict]:
     """Load controls.yaml into a dict keyed by control_id (same pattern as golden_config_builder.py)."""
     with open(path, encoding="utf-8") as f:
