@@ -1,6 +1,6 @@
 # Running the App
 
-This project (Agent-Assisted Coding) is six separate command-line tools that share one file, `controls.yaml`, as their single source of truth. This guide covers installing them and every way to invoke each one. For what each file/folder is and how the tools relate, see [`PROJECT_STRUCTURE.md`](PROJECT_STRUCTURE.md). For what each Python function actually does internally, see [`FUNCTION_REFERENCE.md`](FUNCTION_REFERENCE.md).
+This project (Agent-Assisted Coding) is six separate command-line tools that share one file, `controls.yaml`, as their single source of truth. This guide covers installing them and every way to invoke each one. For what each file/folder is and how the tools relate, see [`PROJECT_STRUCTURE.md`](PROJECT_STRUCTURE.md). For what each Python function actually does internally, see [`FUNCTION_REFERENCE.md`](FUNCTION_REFERENCE.md). If something's gone wrong, see [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md) — it consolidates every tool's "Common errors" table below into one symptom-indexed guide, plus data/content issues that don't produce an error message at all.
 
 ### Historic archiving — applies to Tools 1, 3, and 5
 

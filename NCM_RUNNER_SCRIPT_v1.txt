@@ -117,3 +117,22 @@ python main.py \
   --controls controls.yaml \
   --output-dir ./reports \
   --formats html,json
+  
+  
+python main.py \
+  --device-config golden_config_11_08_2026.txt\
+  --golden-config golden_config_11_08_2026.txt \
+  --controls controls.yaml \
+  --output-dir ./reports \
+  --formats html,pdf
+  
+16/09/2026
+
+Batch run for 75 devices
+
+python main.py \
+  --device-config-dir ./device_configs \
+  --golden-config golden_config.txt \
+  --controls controls.yaml \
+  --output-dir ./reports \
+  --formats html,json

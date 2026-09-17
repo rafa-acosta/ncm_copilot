@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>NCM Copilot</title>
+  <link rel="stylesheet" href="/assets/css/tokens.css" />
+  <link rel="stylesheet" href="/assets/css/base.css" />
+  <link rel="stylesheet" href="/assets/css/layout.css" />
+  <link rel="stylesheet" href="/assets/css/components.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="app-header">
+      <div class="app-header__brand">
+        <div class="app-header__logo" aria-hidden="true">NC</div>
+        <div>
+          <div class="app-header__title">NCM Copilot</div>
+          <div class="app-header__subtitle">Network Configuration Compliance</div>
+        </div>
+      </div>
+      <div class="app-header__actions">
+        <span id="backend-status-pill" class="status-pill" title="Local LLM backend status">
+          <span class="status-pill__dot"></span> Checking backend&hellip;
+        </span>
+        <a class="btn-icon" href="#/settings" aria-label="Settings" title="Settings">&#9881;</a>
+        <button class="btn-icon" type="button" aria-label="About NCM Copilot" title="About NCM Copilot" id="about-button">?</button>
+      </div>
+    </header>
+
+    <nav class="app-sidebar" aria-label="Primary">
+      <ul class="nav-list">
+        <li><a class="nav-link" href="#/overview"><span class="nav-link__icon" aria-hidden="true">&#8962;</span> Overview</a></li>
+        <li><a class="nav-link" href="#/configuration-files"><span class="nav-link__icon" aria-hidden="true">&#128193;</span> Configuration Files</a></li>
+        <li><a class="nav-link" href="#/golden-config"><span class="nav-link__icon" aria-hidden="true">&#9733;</span> Golden Config</a></li>
+        <li><a class="nav-link" href="#/analysis"><span class="nav-link__icon" aria-hidden="true">&#9881;</span> Analysis</a></li>
+        <li><a class="nav-link" href="#/briefings"><span class="nav-link__icon" aria-hidden="true">&#128172;</span> Briefings</a></li>
+        <li><a class="nav-link" href="#/compliance-report"><span class="nav-link__icon" aria-hidden="true">&#128203;</span> Compliance Report</a></li>
+        <li><a class="nav-link" href="#/dashboard"><span class="nav-link__icon" aria-hidden="true">&#128202;</span> Dashboard</a></li>
+        <li><a class="nav-link" href="#/settings"><span class="nav-link__icon" aria-hidden="true">&#9881;</span> Settings</a></li>
+      </ul>
+    </nav>
+
+    <main class="app-main" id="main-content" tabindex="-1"></main>
+  </div>
+
+  <script type="module" src="/assets/js/app.js"></script>
+</body>
+</html>

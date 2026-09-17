@@ -9,3 +9,9 @@ openai>=1.30
 httpx>=0.27
 pydantic>=2.6
 huggingface_hub>=0.24
+
+# Web frontend (webapp/) - thin API layer over the existing tools above,
+# no compliance/config logic duplicated here.
+fastapi>=0.115
+uvicorn[standard]>=0.30
+python-multipart>=0.0.9

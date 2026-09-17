@@ -32,3 +32,14 @@ local-llm/models/
 
 # OS
 .DS_Store
+
+# Web frontend's isolated data workspace (uploads, golden config profiles,
+# analysis run output) - keep the directory structure, ignore its contents.
+webapp/data/*
+!webapp/data/.gitkeep
+!webapp/data/device_configs
+webapp/data/device_configs/*
+!webapp/data/golden_profiles
+webapp/data/golden_profiles/*
+!webapp/data/runs
+webapp/data/runs/*

@@ -1,0 +1,77 @@
+/* Design tokens - the single place this app's visual identity lives.
+   Retheme by editing values here; nothing below should hard-code a color,
+   spacing, radius, or shadow outside this file. */
+:root {
+  /* Neutral surfaces */
+  --color-bg: #FAFAFA;
+  --color-surface: #FFFFFF;
+  --color-surface-raised: #F2F2F3;
+  --color-border: #E3E3E6;
+  --color-border-strong: #D0D0D5;
+
+  /* Text */
+  --color-text: #1D1D1F;
+  --color-text-muted: #6E6E73;
+  --color-text-faint: #A1A1A6;
+  --color-text-on-accent: #FFFFFF;
+
+  /* Accent (restrained blue) */
+  --color-accent: #0A66C2;
+  --color-accent-hover: #0955A5;
+  --color-accent-bg: #EAF2FB;
+
+  /* Compliance-state colors - used ONLY for compliance/status meaning,
+     never decoratively */
+  --color-success: #1E8E3E;
+  --color-success-bg: #E8F5EA;
+  --color-warning: #B7791F;
+  --color-warning-bg: #FDF3DF;
+  --color-danger: #C0362C;
+  --color-danger-bg: #FBEAE8;
+  --color-neutral-status: #6E6E73;
+  --color-neutral-status-bg: #EFEFF0;
+
+  /* Spacing scale (8px base) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+
+  /* Radius */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-pill: 999px;
+
+  /* Shadow - one subtle level, used sparingly (cards, popovers, modals) */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04), 0 1px 1px rgba(0, 0, 0, 0.03);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.14), 0 2px 6px rgba(0, 0, 0, 0.08);
+
+  /* Type scale */
+  --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-family-mono: "SF Mono", "Cascadia Code", Consolas, "Liberation Mono", monospace;
+  --font-size-xs: 12px;
+  --font-size-sm: 13px;
+  --font-size-base: 14px;
+  --font-size-md: 16px;
+  --font-size-lg: 20px;
+  --font-size-xl: 26px;
+  --font-size-xxl: 32px;
+  --line-height-base: 1.5;
+
+  /* Layout */
+  --sidebar-width: 232px;
+  --header-height: 60px;
+  --content-max-width: 1280px;
+
+  /* Motion - short and purposeful only, never decorative */
+  --transition-fast: 120ms ease;
+  --transition-base: 180ms ease;
+
+  --focus-ring: 0 0 0 3px var(--color-accent-bg), 0 0 0 1px var(--color-accent);
+}
