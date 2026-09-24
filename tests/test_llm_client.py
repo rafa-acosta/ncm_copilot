@@ -197,3 +197,71 @@ def test_llm_client_model_defaults_to_registry_model_name(tmp_path, monkeypatch)
     fake_client = _FakeOpenAIClient("x")
     client = LLMClient(url, name, client=fake_client, model=model)
     assert client.model == "qwen2.5-coder-7b-instruct-q4_k_m"
+
+
+# ---- LLMClient._chat retry-on-transient-outage ---------------------------------
+# Covers the local-llm supervisor restart scenario: llama-server crashes or
+# hits its memory ceiling mid-batch and _serve_common.sh relaunches it a few
+# seconds later - a call in flight (or the next one) should ride that out
+# instead of failing the device outright.
+
+class _FlakyThenOkCompletions:
+    """Raises a connection error on the first call, succeeds on the second -
+    simulates the backend being down during a supervisor restart, then back up."""
+
+    def __init__(self, response_text: str, error: Exception):
+        self._response_text = response_text
+        self._error = error
+        self.call_count = 0
+
+    def create(self, **kwargs):
+        self.call_count += 1
+        if self.call_count == 1:
+            raise self._error
+        message = SimpleNamespace(content=self._response_text)
+        choice = SimpleNamespace(message=message)
+        return SimpleNamespace(choices=[choice])
+
+
+class _FlakyOpenAIClient:
+    def __init__(self, response_text: str, error: Exception):
+        self.chat = SimpleNamespace(completions=_FlakyThenOkCompletions(response_text, error))
+
+
+def _make_connection_error():
+    import httpx
+    from openai import APIConnectionError
+
+    return APIConnectionError(request=httpx.Request("POST", QWEN_URL + "/chat/completions"))
+
+
+def test_explain_retries_once_after_transient_connection_error(monkeypatch):
+    monkeypatch.setattr(llm_client, "_RETRY_WAIT_SECONDS", 0.01)
+    monkeypatch.setattr(llm_client, "_RETRY_TIMEOUT_SECONDS", 1)
+    monkeypatch.setattr(llm_client, "_is_reachable", lambda base_url, timeout=2.0: True)
+
+    fake_client = _FlakyOpenAIClient("recovered explanation", _make_connection_error())
+    client = LLMClient(base_url=QWEN_URL, backend_name="qwen_coder", client=fake_client)
+
+    result = client.explain(CONTROL, ["SNMP trap host is missing."])
+
+    assert result == "recovered explanation"
+    assert fake_client.chat.completions.call_count == 2
+
+
+def test_explain_gives_up_if_backend_never_comes_back(monkeypatch):
+    monkeypatch.setattr(llm_client, "_RETRY_WAIT_SECONDS", 0.01)
+    monkeypatch.setattr(llm_client, "_RETRY_TIMEOUT_SECONDS", 0.05)
+    monkeypatch.setattr(llm_client, "_is_reachable", lambda base_url, timeout=2.0: False)
+
+    error = _make_connection_error()
+
+    class _AlwaysDownCompletions:
+        def create(self, **kwargs):
+            raise error
+
+    fake_client = SimpleNamespace(chat=SimpleNamespace(completions=_AlwaysDownCompletions()))
+    client = LLMClient(base_url=QWEN_URL, backend_name="qwen_coder", client=fake_client)
+
+    with pytest.raises(type(error)):
+        client.explain(CONTROL, ["SNMP trap host is missing."])

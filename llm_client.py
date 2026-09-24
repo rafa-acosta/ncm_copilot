@@ -22,11 +22,12 @@ text" true by construction instead of by hoping the model complied.
 from __future__ import annotations
 
 import os
+import time
 from pathlib import Path
 
 import httpx
 import yaml
-from openai import OpenAI
+from openai import APIConnectionError, APITimeoutError, OpenAI
 
 _REPO_ROOT = Path(__file__).parent
 _DEFAULT_CONFIG_PATH = _REPO_ROOT / "local-llm" / "config.yaml"
@@ -62,6 +63,15 @@ Your job:
 
 class BackendUnavailableError(RuntimeError):
     """Raised when no requested/registered local LLM backend could be reached."""
+
+
+# How long LLMClient._chat waits for a backend to come back after a connection
+# failure before giving up and re-raising - see local-llm/README.md's "Memory
+# safety" section for why the backend can restart mid-batch (a supervised
+# llama-server crash/OOM-kill recovery), and _serve_common.sh's LLAMA_READY_TIMEOUT
+# (default 180s) for how long a cold model load can actually take.
+_RETRY_WAIT_SECONDS = float(os.environ.get("AGENT_ASSISTED_CODING_LLM_RETRY_WAIT", "5"))
+_RETRY_TIMEOUT_SECONDS = float(os.environ.get("AGENT_ASSISTED_CODING_LLM_RETRY_TIMEOUT", "200"))
 
 
 def _config_path(config_path: str | Path | None = None) -> Path:
@@ -187,6 +197,27 @@ class LLMClient:
         # server or an HTTP-mocking library.
         self.client = client if client is not None else OpenAI(base_url=base_url, api_key="not-needed")
 
+    def _chat(self, messages: list[dict], temperature: float) -> str:
+        """Call chat.completions.create, tolerating exactly one transient
+        backend outage: local-llm/_serve_common.sh's supervisor loop restarts
+        llama-server automatically after a crash or a memory-ceiling kill
+        (see its README's "Memory safety" section), which costs a ~15-30s
+        reload window, not the rest of a batch run - as long as this call
+        waits it out instead of failing immediately. Any error other than a
+        connection/timeout failure (e.g. a real API error) is not retried."""
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model, messages=messages, temperature=temperature,
+            )
+        except (APIConnectionError, APITimeoutError):
+            deadline = time.monotonic() + _RETRY_TIMEOUT_SECONDS
+            while time.monotonic() < deadline and not _is_reachable(self.base_url):
+                time.sleep(_RETRY_WAIT_SECONDS)
+            response = self.client.chat.completions.create(
+                model=self.model, messages=messages, temperature=temperature,
+            )
+        return response.choices[0].message.content.strip()
+
     def explain(self, control: dict, finding_details: list[str]) -> str:
         """Return a 2-3 sentence plain-language explanation for one FAILED control.
 
@@ -202,15 +233,13 @@ class LLMClient:
             f"Specific finding(s) on this device:\n"
             + "\n".join(f"- {d}" for d in finding_details)
         )
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=[
+        return self._chat(
+            [
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": user_prompt},
             ],
             temperature=0.2,
         )
-        return response.choices[0].message.content.strip()
 
     def polish_statement(self, original: str, violations: list[str]) -> str:
         """Rewrite `original` (a risk statement that failed validation) as one
@@ -223,12 +252,10 @@ class LLMClient:
             f"Validation failure(s): {'; '.join(violations)}\n"
             "Rewrite it as one clean sentence that fixes these issues."
         )
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=[
+        return self._chat(
+            [
                 {"role": "system", "content": RISK_STATEMENT_SYSTEM_PROMPT},
                 {"role": "user", "content": user_prompt},
             ],
             temperature=0.2,
         )
-        return response.choices[0].message.content.strip()

@@ -59,8 +59,9 @@ Each `serve_*.sh` script honors these environment variables, so none of this nee
 editing the scripts:
 
 ```bash
-# 1. Reduce context first - cheapest fix, no re-download needed
-LLAMA_CTX_SIZE=2048 ./serve_qwen_coder.sh
+# 1. Reduce context further first - cheapest fix, no re-download needed
+#    (default is already 2048 - see "Memory safety" below for why)
+LLAMA_CTX_SIZE=1024 ./serve_qwen_coder.sh
 
 # 2. Drop to a smaller quantization - both repos publish Q3_K_M (smaller than
 #    Q4_K_M; neither repo actually has a Q4_K_S build, despite what you might
@@ -76,7 +77,42 @@ LLAMA_NGL=20 ./serve_qwen_coder.sh
 LLAMA_READY_TIMEOUT=300 ./serve_qwen_coder.sh
 ```
 
-Combine as needed, e.g. `LLAMA_CTX_SIZE=2048 LLAMA_NGL=20 ./serve_qwen_coder.sh`.
+Combine as needed, e.g. `LLAMA_CTX_SIZE=1024 LLAMA_NGL=20 ./serve_qwen_coder.sh`.
+
+## Memory safety (system RAM, not VRAM)
+
+A batch run of ~500 device briefings sends 500 sequential, unrelated one-shot
+prompts to the same long-lived `llama-server` process (see `llm_client.py` -
+the Python side is a pure HTTP client and never restarts the server itself).
+This build of `llama-server` (`bin/llama-server --help`) defaults to `-np -1`
+(auto slot count) plus an **8192MiB `--cache-ram` idle-slot cache** that
+*retains* each slot's KV state on every request instead of freeing it
+(`--cache-idle-slots` default: enabled). That cache only ever helps when
+requests share a reusable prompt prefix - ours don't (each finding is a
+different device/control) - so across hundreds of requests it just
+accumulates, which is exactly the "RAM climbs steadily until the machine
+runs out and everything crashes" failure mode. Confirmed by watching
+`nvidia-smi`/system RAM while load-testing this fix.
+
+`_serve_common.sh` now sets three defenses, none of which need editing the
+scripts to change:
+
+| Env var | Default | What it does |
+|---|---|---|
+| `LLAMA_NP` | `1` | `--parallel` - one slot; nothing here sends concurrent requests, so `-1` (auto) only added overhead. |
+| `LLAMA_CACHE_RAM` | `0` | `--cache-ram` - disables the idle-slot cache outright (`--no-cache-idle-slots` is also always passed). This is the actual fix for the growth pattern above. |
+| `LLAMA_MEM_MAX` | `8G` | Hard ceiling via `systemd-run --user --scope -p MemoryMax=... -p MemorySwapMax=0`. If growth ever comes from somewhere else (a real llama.cpp/Vulkan leak, a future regression), this process gets OOM-killed at a safe, contained limit instead of starving the whole system. Requires `systemd --user`; falls back to no ceiling (with a warning) if unavailable. |
+
+Paired with that ceiling, the script no longer exits when the server dies -
+it's now a supervisor loop that relaunches `llama-server` automatically
+(`LLAMA_MAX_RESTARTS`, default `5`; `LLAMA_RESTART_COOLDOWN`, default `5`
+seconds) whenever it exits for any reason. `llm_client.py`'s `LLMClient._chat`
+rides out the ~15-30s reload window on the client side (see
+`AGENT_ASSISTED_CODING_LLM_RETRY_WAIT`/`_RETRY_TIMEOUT` env vars) instead of
+failing the in-flight device outright - so hitting the ceiling mid-batch costs
+a pause, not the rest of the run. Verified live: killed a running
+`llama-server` with `kill -9` mid-session and confirmed the supervisor brought
+it back up in ~20s.
 
 ## Files
 
