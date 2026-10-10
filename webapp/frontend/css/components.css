@@ -236,6 +236,22 @@
 .split-layout > .card { max-height: 75vh; overflow-y: auto; }
 @media (max-width: 1100px) { .split-layout { grid-template-columns: 1fr; } }
 
+/* ---------- Briefing report header + prose (professional report layout) ---------- */
+.briefing-header__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-4);
+}
+.briefing-header__label { font-size: var(--font-size-xs); text-transform: uppercase; letter-spacing: 0.04em; color: var(--color-text-muted); margin-bottom: 2px; }
+.briefing-header__value { font-size: var(--font-size-base); font-weight: 600; word-break: break-word; }
+.briefing-prose {
+  max-width: 820px;
+  line-height: 1.6;
+}
+.briefing-prose h2, .briefing-prose h3 { margin-top: var(--space-5); }
+.briefing-prose h2:first-child, .briefing-prose h3:first-child { margin-top: 0; }
+.briefing-prose .data-table-wrap { margin: var(--space-3) 0; }
+
 /* ---------- Misc ---------- */
 .muted { color: var(--color-text-muted); }
 .text-sm { font-size: var(--font-size-sm); }

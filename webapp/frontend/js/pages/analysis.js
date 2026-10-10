@@ -1,8 +1,9 @@
 import { api } from "../api.js";
-import { el, clear } from "../dom.js";
+import { el, clear, formatDuration } from "../dom.js";
 import { errorPanel } from "../components/errorPanel.js";
 import { toastError, toastSuccess, toastWarning } from "../components/toast.js";
 import { renderJobProgress } from "../components/jobProgress.js";
+import { stageStatusBadge, goldenConfigLabel } from "../components/runStatus.js";
 import { getState, setState } from "../state.js";
 import { navigateTo } from "../router.js";
 
@@ -122,19 +123,34 @@ export async function render(container) {
     setupCard.appendChild(select);
 
     setupCard.appendChild(el("h3", { text: "3. Run", style: "margin-top: var(--space-5);" }));
-    const summary = el("p", { class: "muted" });
+    const summary = el("div", {});
     setupCard.appendChild(summary);
     const runBtn = el("button", { class: "btn btn--primary", text: "Run Analysis", onclick: runAnalysis });
     setupCard.appendChild(runBtn);
 
     function updateRunSummary() {
       const activeProfile = profiles.find((p) => p.profile_id === selectedProfileId);
-      summary.textContent = `${selected.size} of ${configs.length} file(s) selected — Golden Config: ${activeProfile ? activeProfile.name : "—"}. Evaluates the 15 active compliance controls per device.`;
+      clear(summary);
+      summary.appendChild(
+        el("div", { class: "cluster", style: "gap: var(--space-4);" }, [
+          el("span", {}, [el("strong", { text: String(configs.length) }), " loaded"]),
+          el("span", {}, [el("strong", { text: String(selected.size) }), " selected for analysis"]),
+          el("span", {}, [el("strong", { text: String(selected.size) }), " ready to process"]),
+        ])
+      );
+      summary.appendChild(
+        el("p", {
+          class: "muted", style: "margin-top: var(--space-1);",
+          text: `Golden Config: ${activeProfile ? activeProfile.name : "—"}. Evaluates the 15 active compliance controls per device.`,
+        })
+      );
       runBtn.disabled = selected.size === 0;
     }
     updateRunSummary();
   }
   renderSetup();
+
+  let activeJobDisposer = null;
 
   async function runAnalysis() {
     clear(resultArea);
@@ -156,7 +172,7 @@ export async function render(container) {
     const progressCard = el("div", { class: "card" }, [el("h3", { text: "Running Analysis" })]);
     resultArea.appendChild(progressCard);
 
-    renderJobProgress(
+    activeJobDisposer = renderJobProgress(
       progressCard,
       jobId,
       (id) => `/api/analysis/jobs/${id}`,
@@ -215,14 +231,31 @@ export async function render(container) {
         el("h3", { text: "Recent Analysis Runs" }),
         el("div", { class: "data-table-wrap" }, [
           el("table", { class: "data-table" }, [
-            el("thead", {}, [el("tr", {}, [el("th", { text: "Run" }), el("th", { text: "Devices" })])]),
+            el("thead", {}, [
+              el("tr", {}, [
+                el("th", { text: "Run" }), el("th", { text: "Devices" }), el("th", { text: "Golden Config" }),
+                el("th", { text: "Analysis" }), el("th", { text: "Duration" }),
+              ]),
+            ]),
             el(
               "tbody", {},
-              runs.slice(0, 8).map((r) => el("tr", {}, [el("td", { text: r.run_id }), el("td", { text: String(r.device_count) })]))
+              runs.slice(0, 8).map((r) =>
+                el("tr", {}, [
+                  el("td", { text: r.run_id }),
+                  el("td", { text: String(r.device_count) }),
+                  el("td", { text: goldenConfigLabel(r.golden_config) }),
+                  el("td", {}, [stageStatusBadge(r.analysis ? r.analysis.status : "not_generated")]),
+                  el("td", { text: formatDuration(r.analysis ? r.analysis.duration_seconds : null) }),
+                ])
+              )
             ),
           ]),
         ]),
       ])
     );
   }
+
+  return () => {
+    if (activeJobDisposer) activeJobDisposer();
+  };
 }

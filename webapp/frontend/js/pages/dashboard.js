@@ -3,6 +3,7 @@ import { el, clear } from "../dom.js";
 import { errorPanel } from "../components/errorPanel.js";
 import { toastError, toastSuccess } from "../components/toast.js";
 import { compliancePctBadge } from "../components/statusBadge.js";
+import { renderElapsedIndicator } from "../components/jobProgress.js";
 import { getState } from "../state.js";
 import { navigateTo } from "../router.js";
 
@@ -188,6 +189,7 @@ export async function render(container) {
 
   async function buildDashboard(rebuildBtn) {
     rebuildBtn.disabled = true;
+    const indicator = renderElapsedIndicator(setupCard, "Building dashboard...");
     try {
       const result = await api.post("/api/dashboard/build", { run_id: runId });
       toastSuccess("Dashboard built.");
@@ -196,6 +198,7 @@ export async function render(container) {
     } catch (err) {
       toastError(err.detail);
     }
+    indicator.stop();
     rebuildBtn.disabled = false;
   }
 

@@ -21,6 +21,7 @@ from remediation_advisor import discover_report_paths, load_controls_by_id, load
 
 from webapp.backend import jobs
 from webapp.backend.security import resolve_within
+from webapp.backend.services import golden_service, run_manifest
 from webapp.backend.services.analysis_service import run_dir_path
 
 CONTROLS_PATH = REPO_ROOT / "controls.yaml"
@@ -30,8 +31,56 @@ class BriefingError(Exception):
     """User-facing reason a briefing run couldn't start."""
 
 
+def get_golden_config_options(run_id: str) -> dict:
+    """What the Briefings screen needs to build its Golden Config selector:
+    the run's OWN Golden Config (from its analysis-time manifest - the safe
+    default, never silently swapped for the repo's default profile) plus
+    every profile the user could deliberately choose instead."""
+    run_dir = run_dir_path(run_id)
+    device_dirs = [p for p in run_dir.iterdir() if p.is_dir() and (p / "report.json").exists()]
+    manifest = run_manifest.load_or_legacy(run_dir, len(device_dirs))
+    return {
+        "run_golden_config": manifest.get("golden_config"),
+        "profiles": [
+            {"profile_id": p.profile_id, "name": p.name, "read_only": p.read_only} for p in golden_service.list_profiles()
+        ],
+    }
+
+
+def _resolve_device_vars(run_dir: Path, run_golden_config: dict | None, golden_profile_id: str | None) -> tuple[dict | None, dict | None]:
+    """Returns (device_vars, golden_config_meta_actually_used).
+
+    Default (golden_profile_id is None or matches the run's own profile_id):
+    use the exact snapshot this run's analysis produced - never silently
+    substitutes the repo's default Golden Config. Only an explicit, different
+    profile_id causes a different Golden Config's device_vars to be used."""
+    run_profile_id = (run_golden_config or {}).get("profile_id")
+    if golden_profile_id is None or golden_profile_id == run_profile_id:
+        device_vars_path = run_dir / "_device_vars_used.json"
+        device_vars = json.loads(device_vars_path.read_text(encoding="utf-8")) if device_vars_path.exists() else None
+        used_meta = dict(run_golden_config) if run_golden_config else None
+        if used_meta is not None:
+            used_meta["source"] = "run snapshot"
+        return device_vars, used_meta
+
+    profile = golden_service.get_profile(golden_profile_id)
+    used_meta = {
+        "name": profile["name"],
+        "profile_id": golden_profile_id,
+        "source": "override",
+        "snapshot_path": None,
+        "checksum": run_manifest.sha256_text(profile["rendered_text"]),
+        "profile_updated_at": profile.get("updated_at") or None,
+    }
+    return profile["device_vars"], used_meta
+
+
 def start_briefing(
-    run_id: str, device_filenames: list[str] | None, severity_min: str | None, backend_choice: str = "auto"
+    run_id: str,
+    device_filenames: list[str] | None,
+    severity_min: str | None,
+    backend_choice: str = "auto",
+    golden_profile_id: str | None = None,
 ) -> str:
     run_dir = run_dir_path(run_id)
     if device_filenames:
@@ -56,13 +105,17 @@ def start_briefing(
     backend_label = f"{backend_name} ({model_name})"
     controls_by_id = load_controls_by_id(CONTROLS_PATH)
 
-    device_vars_path = run_dir / "_device_vars_used.json"
-    device_vars = json.loads(device_vars_path.read_text(encoding="utf-8")) if device_vars_path.exists() else None
+    device_dirs = [p for p in run_dir.iterdir() if p.is_dir() and (p / "report.json").exists()]
+    manifest = run_manifest.load_or_legacy(run_dir, len(device_dirs))
+    device_vars, golden_config_used = _resolve_device_vars(run_dir, manifest.get("golden_config"), golden_profile_id)
+    if golden_config_used is not None:
+        run_manifest.update_golden_config(run_dir, golden_config_used)
 
     briefings_dir = run_dir / "briefings"
     briefings_dir.mkdir(exist_ok=True)
 
     def work(report_progress):
+        mono_start = run_manifest.mark_started(run_dir, "briefing")
         briefed = []
         errors = []
         for index, path in enumerate(report_paths):
@@ -75,9 +128,23 @@ def start_briefing(
                     report, controls_by_id, device_vars, llm_client, backend_label, severity_min,
                     device_dir / "briefing.md", device_dir / "briefing.json",
                 )
+                # _brief_device/render_briefing_json (shared with the CLI tool)
+                # stamp the analysis-time golden_config_path for reproducibility
+                # but have no notion of a briefing-time override - patch that
+                # traceability in here rather than changing the shared renderer.
+                if golden_config_used is not None:
+                    json_path = device_dir / "briefing.json"
+                    data = json.loads(json_path.read_text(encoding="utf-8"))
+                    data["golden_config_used"] = golden_config_used
+                    json_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
                 briefed.append({"device": report.device_name, "finding_count": count})
             except Exception as exc:  # noqa: BLE001 - one device's LLM call failing must not stop the batch
                 errors.append(f"{report.device_name}: {exc}")
+
+        if errors and not briefed:
+            run_manifest.mark_failed(run_dir, "briefing", mono_start, "; ".join(errors))
+        else:
+            run_manifest.mark_completed(run_dir, "briefing", mono_start, device_count=len(briefed), error_count=len(errors))
         return {"briefed": briefed, "errors": errors, "backend": backend_label}
 
     return jobs.start_job("briefing", total=len(report_paths), work=work)

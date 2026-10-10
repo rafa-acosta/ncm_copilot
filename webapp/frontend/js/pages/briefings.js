@@ -1,8 +1,9 @@
 import { api } from "../api.js";
-import { el, clear, renderMarkdownLite } from "../dom.js";
+import { el, clear, renderMarkdownLite, formatTimestamp } from "../dom.js";
 import { errorPanel } from "../components/errorPanel.js";
 import { toastError, toastSuccess, toastWarning } from "../components/toast.js";
 import { renderJobProgress } from "../components/jobProgress.js";
+import { goldenConfigLabel } from "../components/runStatus.js";
 import { getState } from "../state.js";
 import { navigateTo } from "../router.js";
 
@@ -60,6 +61,9 @@ export async function render(container) {
   let briefAll = true;
   let selectedDevices = new Set();
   let severityMin = "";
+  let selectedGoldenProfileId = ""; // "" = use the run's own Golden Config snapshot (the safe default)
+  let goldenConfigOptions = null;
+  let activeJobDisposer = null;
 
   const setupCard = el("div", { class: "card" });
   const resultArea = el("div", {});
@@ -71,11 +75,13 @@ export async function render(container) {
   async function loadRun() {
     clear(setupCard);
     clear(resultArea);
+    selectedGoldenProfileId = "";
     let devices, existing;
     try {
-      [devices, existing] = await Promise.all([
+      [devices, existing, goldenConfigOptions] = await Promise.all([
         api.get(`/api/analysis/runs/${runId}/devices`),
         api.get(`/api/briefings/${runId}`),
+        api.get(`/api/briefings/${runId}/golden-config-options`),
       ]);
     } catch (err) {
       setupCard.appendChild(errorPanel(err, { title: "Unable to load this run" }));
@@ -90,6 +96,52 @@ export async function render(container) {
     );
     setupCard.appendChild(el("h3", { text: "Run" }));
     setupCard.appendChild(runSelect);
+
+    // Golden Config traceability + selection (see run_manifest.py /
+    // briefings_service.py) - defaults to the EXACT snapshot this run's
+    // analysis used, never silently the repo's default profile. An explicit,
+    // different choice here is flagged, not blocked.
+    const runGoldenConfig = goldenConfigOptions.run_golden_config;
+    setupCard.appendChild(el("h3", { text: "Golden Config", style: "margin-top: var(--space-5);" }));
+    setupCard.appendChild(
+      el("p", { class: "field__hint" }, [
+        "Analysis run: ", el("strong", { text: runId }), el("br", {}),
+        "Golden Config used: ", el("strong", { text: goldenConfigLabel(runGoldenConfig) }),
+      ])
+    );
+    const mismatchWarning = el("div", {});
+    const goldenSelect = el(
+      "select",
+      {
+        class: "input", style: "max-width: 340px;",
+        onchange: (e) => { selectedGoldenProfileId = e.target.value; updateMismatchWarning(); },
+      },
+      [
+        el("option", { value: "", text: `Use run snapshot (${runGoldenConfig ? runGoldenConfig.name : "Unknown"})` }),
+        ...goldenConfigOptions.profiles.map((p) =>
+          el("option", { value: p.profile_id, text: p.name + (p.read_only ? " (Default)" : "") })
+        ),
+      ]
+    );
+    setupCard.appendChild(goldenSelect);
+    setupCard.appendChild(mismatchWarning);
+
+    function updateMismatchWarning() {
+      clear(mismatchWarning);
+      if (!selectedGoldenProfileId) return; // "" = run snapshot, never a mismatch
+      const runProfileId = runGoldenConfig ? runGoldenConfig.profile_id : null;
+      if (selectedGoldenProfileId !== runProfileId) {
+        mismatchWarning.appendChild(
+          el("div", { class: "card", style: "margin-top: var(--space-2); border-color: var(--color-warning);" }, [
+            el("span", { class: "badge badge--warning", text: "⚠ Golden Config mismatch" }),
+            el("p", {
+              class: "field__hint", style: "margin-top: var(--space-1);",
+              text: `Warning: This Golden Config differs from the Golden Config used during analysis run ${runId} (${runGoldenConfig ? runGoldenConfig.name : "Unknown"}). The briefing may not represent the original analysis baseline.`,
+            }),
+          ])
+        );
+      }
+    }
 
     setupCard.appendChild(el("h3", { text: "Devices", style: "margin-top: var(--space-5);" }));
     const allToggle = el("label", { class: "cluster" }, [
@@ -139,6 +191,7 @@ export async function render(container) {
         device_filenames: briefAll ? null : Array.from(selectedDevices),
         severity_min: severityMin || null,
         backend: "auto",
+        golden_profile_id: selectedGoldenProfileId || null,
       });
       jobId = res.job_id;
     } catch (err) {
@@ -150,7 +203,7 @@ export async function render(container) {
     const progressCard = el("div", { class: "card" }, [el("h3", { text: "Generating Briefings" })]);
     resultArea.appendChild(progressCard);
 
-    renderJobProgress(progressCard, jobId, (id) => `/api/briefings/jobs/${id}`, {
+    activeJobDisposer = renderJobProgress(progressCard, jobId, (id) => `/api/briefings/jobs/${id}`, {
       onDone: async (result) => {
         toastSuccess(`Briefed ${result.briefed.length} device(s) using ${result.backend}.`);
         if (result.errors.length) toastWarning(`${result.errors.length} device(s) could not be briefed.`, { timeout: 8000 });
@@ -167,7 +220,7 @@ export async function render(container) {
 
   function renderExisting(existing) {
     clear(listCard);
-    listCard.appendChild(el("h3", { text: "Available Briefings" }));
+    listCard.appendChild(el("h3", { text: `Available Briefings (${existing.length})` }));
     if (!existing.length) {
       listCard.appendChild(el("p", { class: "muted", text: "No briefings generated for this run yet." }));
       return;
@@ -194,7 +247,33 @@ export async function render(container) {
       return;
     }
     clear(viewer);
-    const prose = el("div", { class: "card", style: "margin-top: var(--space-4);" });
+    const data = briefing.data || {};
+
+    // Professional report header - only fields the briefing.json actually
+    // carries (see remediation_advisor.render_briefing_json /
+    // briefings_service.py's golden_config_used patch); never fabricated.
+    const headerRows = [
+      ["Analysis run", runId],
+      ["Device", briefing.device],
+      ["Generated", data.generated_at ? formatTimestamp(data.generated_at) : null],
+      ["Golden Config used", data.golden_config_used ? goldenConfigLabel(data.golden_config_used) : null],
+      ["Backend", data.backend_used || null],
+    ].filter(([, value]) => value);
+
+    const header = el("div", { class: "card briefing-header", style: "margin-top: var(--space-4);" }, [
+      el(
+        "div", { class: "briefing-header__grid" },
+        headerRows.map(([label, value]) =>
+          el("div", { class: "briefing-header__field" }, [
+            el("div", { class: "briefing-header__label", text: label }),
+            el("div", { class: "briefing-header__value", text: value }),
+          ])
+        )
+      ),
+    ]);
+    viewer.appendChild(header);
+
+    const prose = el("div", { class: "card briefing-prose", style: "margin-top: var(--space-3);" });
     viewer.appendChild(prose);
     renderMarkdownLite(prose, briefing.markdown);
     viewer.appendChild(
@@ -215,4 +294,8 @@ export async function render(container) {
   }
 
   await loadRun();
+
+  return () => {
+    if (activeJobDisposer) activeJobDisposer();
+  };
 }

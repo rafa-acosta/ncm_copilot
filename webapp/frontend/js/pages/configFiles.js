@@ -82,7 +82,19 @@ async function renderTable(body) {
     return;
   }
 
+  // Stale-selection guard: a file selected in a previous render of this table
+  // (or carried over from before an upload/delete refreshed `files`) must
+  // never stay "selected" once it no longer exists - otherwise counters and
+  // bulk actions would silently operate on filenames that are gone.
+  const validFilenames = new Set(files.map((f) => f.filename));
+  for (const filename of Array.from(selected)) {
+    if (!validFilenames.has(filename)) selected.delete(filename);
+  }
+
   let search = "";
+  const counters = el("div", { class: "cluster", style: "gap: var(--space-4); margin-bottom: var(--space-2);" });
+  body.appendChild(counters);
+
   const toolbar = el("div", { class: "table-toolbar" }, [
     el("input", {
       class: "input", style: "max-width: 280px;", placeholder: "Search filename or device...",
@@ -94,7 +106,7 @@ async function renderTable(body) {
     el("div", { class: "cluster" }, [
       el("button", {
         class: "btn btn--sm", text: "Delete Selected",
-        onclick: () => deleteSelected(files.map((f) => f.filename), body),
+        onclick: () => deleteSelected(Array.from(selected), body),
       }),
       el("button", {
         class: "btn btn--sm btn--danger", text: "Delete All",
@@ -107,24 +119,40 @@ async function renderTable(body) {
   const tableWrap = el("div", { class: "data-table-wrap" });
   body.appendChild(tableWrap);
 
+  function updateCounters() {
+    clear(counters);
+    counters.appendChild(counterStat(String(files.length), "files loaded"));
+    counters.appendChild(counterStat(String(selected.size), "files selected"));
+    // Every uploaded config is a plain, already-validated .txt file (see
+    // configs_service.save_uploads) - there is no separate "invalid config"
+    // concept in this app, so everything selected is what Analysis will
+    // actually process. See analysis.js for where this number is consumed.
+    counters.appendChild(counterStat(String(selected.size), "ready for analysis"));
+  }
+
   function renderRows() {
     clear(tableWrap);
     const visible = files.filter(
       (f) => f.filename.toLowerCase().includes(search) || (f.device_name || "").toLowerCase().includes(search)
     );
+    const visibleSelectedCount = visible.filter((f) => selected.has(f.filename)).length;
+    const allVisibleSelected = visible.length > 0 && visibleSelectedCount === visible.length;
+    const selectAllCheckbox = el("input", {
+      type: "checkbox",
+      "aria-label": "Select all",
+      onchange: (e) => {
+        if (e.target.checked) visible.forEach((f) => selected.add(f.filename));
+        else visible.forEach((f) => selected.delete(f.filename));
+        renderRows();
+      },
+    });
+    selectAllCheckbox.checked = allVisibleSelected;
+    selectAllCheckbox.indeterminate = !allVisibleSelected && visibleSelectedCount > 0;
+
     const table = el("table", { class: "data-table" }, [
       el("thead", {}, [
         el("tr", {}, [
-          el("th", {}, [
-            el("input", {
-              type: "checkbox",
-              "aria-label": "Select all",
-              onchange: (e) => {
-                selected = e.target.checked ? new Set(visible.map((f) => f.filename)) : new Set();
-                renderRows();
-              },
-            }),
-          ]),
+          el("th", {}, [selectAllCheckbox]),
           el("th", { text: "Filename" }),
           el("th", { text: "Detected Device" }),
           el("th", { text: "Size" }),
@@ -145,6 +173,13 @@ async function renderTable(body) {
                 onchange: (e) => {
                   if (e.target.checked) selected.add(f.filename);
                   else selected.delete(f.filename);
+                  updateCounters();
+                  // Only the header checkbox's checked/indeterminate state
+                  // needs to stay in sync with individual toggles - not
+                  // worth a full renderRows() (and losing focus) per click.
+                  const visibleNowSelected = visible.filter((v) => selected.has(v.filename)).length;
+                  selectAllCheckbox.checked = visible.length > 0 && visibleNowSelected === visible.length;
+                  selectAllCheckbox.indeterminate = selectAllCheckbox.checked ? false : visibleNowSelected > 0;
                 },
               }),
             ]),
@@ -164,8 +199,16 @@ async function renderTable(body) {
       ),
     ]);
     tableWrap.appendChild(table);
+    updateCounters();
   }
   renderRows();
+}
+
+function counterStat(value, label) {
+  return el("div", { class: "cluster", style: "gap: 4px;" }, [
+    el("strong", { text: value }),
+    el("span", { class: "muted", text: label }),
+  ]);
 }
 
 async function deleteSelected(filenames, body) {

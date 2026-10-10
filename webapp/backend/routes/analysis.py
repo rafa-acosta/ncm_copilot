@@ -44,3 +44,8 @@ def latest_run() -> dict:
 @router.get("/runs/{run_id}/devices")
 def list_run_devices(run_id: str) -> list[str]:
     return analysis_service.list_run_devices(run_id)
+
+
+@router.get("/runs/{run_id}/manifest")
+def get_run_manifest(run_id: str) -> dict:
+    return analysis_service.get_run_manifest(run_id)

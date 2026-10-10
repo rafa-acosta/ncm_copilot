@@ -16,6 +16,7 @@ if str(REPO_ROOT) not in sys.path:
 from compliance_dashboard_builder import build_dashboard  # noqa: E402
 
 from webapp.backend.security import resolve_within
+from webapp.backend.services import run_manifest
 from webapp.backend.services.analysis_service import run_dir_path
 
 CONTROLS_PATH = REPO_ROOT / "controls.yaml"
@@ -33,9 +34,15 @@ def build_for_run(run_id: str) -> dict:
     if not device_report_dirs:
         raise DashboardError(f"Run '{run_id}' has no analyzed devices to build a dashboard from.")
 
-    HISTORY_DIR.mkdir(parents=True, exist_ok=True)
-    out_dir = resolve_within(run_dir, "dashboard")
-    context = build_dashboard(run_dir, CONTROLS_PATH, out_dir, HISTORY_DIR)
+    mono_start = run_manifest.mark_started(run_dir, "dashboard")
+    try:
+        HISTORY_DIR.mkdir(parents=True, exist_ok=True)
+        out_dir = resolve_within(run_dir, "dashboard")
+        context = build_dashboard(run_dir, CONTROLS_PATH, out_dir, HISTORY_DIR)
+    except Exception as exc:  # noqa: BLE001 - record the failure before it propagates to the route handler
+        run_manifest.mark_failed(run_dir, "dashboard", mono_start, str(exc))
+        raise
+    run_manifest.mark_completed(run_dir, "dashboard", mono_start, device_count=len(device_report_dirs))
 
     fleet = context["fleet"]
     return {

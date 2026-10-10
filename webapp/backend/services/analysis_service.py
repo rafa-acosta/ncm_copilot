@@ -24,7 +24,7 @@ from report_generator import render_fleet_html  # noqa: E402
 from run_archive import new_run_dir, refresh_latest  # noqa: E402
 
 from webapp.backend import jobs
-from webapp.backend.services import configs_service, golden_service
+from webapp.backend.services import configs_service, golden_service, run_manifest
 
 DATA_ROOT = Path(__file__).resolve().parents[2] / "data"
 RUNS_DIR = DATA_ROOT / "runs"
@@ -69,34 +69,56 @@ def start_analysis(device_filenames: list[str], golden_profile_id: str) -> str:
     # having to guess which profile was active after the fact.
     (run_dir / "_device_vars_used.json").write_text(json.dumps(profile["device_vars"]), encoding="utf-8")
 
+    total_configuration_count = len(configs_service.list_configs())
+    golden_config_meta = {
+        "name": profile["name"],
+        "profile_id": golden_profile_id,
+        "source": "default" if golden_profile_id == golden_service.DEFAULT_PROFILE_ID else "profile",
+        "snapshot_path": golden_config_path.name,
+        "checksum": run_manifest.sha256_text(golden_config_text),
+        "profile_updated_at": profile.get("updated_at") or None,
+    }
+    run_manifest.create_for_analysis(
+        run_dir, run_dir.name, total_configuration_count, len(device_filenames), golden_config_meta
+    )
+
     device_entries = [(fn, configs_service.DEVICE_CONFIGS_DIR / fn) for fn in device_filenames]
 
     def work(report_progress):
-        results_by_device: dict[str, list] = {}
-        report_links: dict[str, str] = {}
-        total_fail = 0
-        errored_devices: list[str] = []
+        mono_start = run_manifest.mark_started(run_dir, "analysis")
+        try:
+            results_by_device: dict[str, list] = {}
+            report_links: dict[str, str] = {}
+            total_fail = 0
+            errored_devices: list[str] = []
 
-        for index, (filename, device_path) in enumerate(device_entries):
-            device_stem = Path(filename).stem
-            report_progress(index, f"Analyzing {device_stem} ({index + 1} of {len(device_entries)})")
-            try:
-                results = _evaluate_device(
-                    device_path, golden_config_path, golden_config_text,
-                    controls, exceptions, run_dir / device_stem, _FORMATS,
-                )
-            except Exception as exc:  # noqa: BLE001 - one unreadable file must not stop the batch
-                errored_devices.append(f"{device_stem}: {exc}")
-                continue
-            results_by_device[device_stem] = results
-            report_links[device_stem] = f"{device_stem}/report.html"
-            total_fail += sum(1 for r in results if r.status == "FAIL")
+            for index, (filename, device_path) in enumerate(device_entries):
+                device_stem = Path(filename).stem
+                report_progress(index, f"Analyzing {device_stem} ({index + 1} of {len(device_entries)})")
+                try:
+                    results = _evaluate_device(
+                        device_path, golden_config_path, golden_config_text,
+                        controls, exceptions, run_dir / device_stem, _FORMATS,
+                    )
+                except Exception as exc:  # noqa: BLE001 - one unreadable file must not stop the batch
+                    errored_devices.append(f"{device_stem}: {exc}")
+                    continue
+                results_by_device[device_stem] = results
+                report_links[device_stem] = f"{device_stem}/report.html"
+                total_fail += sum(1 for r in results if r.status == "FAIL")
 
-        if len(device_entries) > 1 and results_by_device:
-            render_fleet_html(results_by_device, report_links, run_dir / "fleet_report.html")
+            if len(device_entries) > 1 and results_by_device:
+                render_fleet_html(results_by_device, report_links, run_dir / "fleet_report.html")
 
-        refresh_latest(run_dir, RUNS_DIR)
+            refresh_latest(run_dir, RUNS_DIR)
+        except Exception as exc:  # noqa: BLE001 - record the failure before jobs.py re-surfaces it
+            run_manifest.mark_failed(run_dir, "analysis", mono_start, str(exc))
+            raise
 
+        run_manifest.mark_completed(
+            run_dir, "analysis", mono_start,
+            device_count=len(device_entries), analyzed_count=len(results_by_device), total_fail=total_fail,
+        )
         return {
             "run_id": run_dir.name,
             "device_count": len(device_entries),
@@ -116,7 +138,20 @@ def list_runs() -> list[dict]:
         if not entry.is_dir() or entry.name == "latest":
             continue
         device_dirs = [p for p in entry.iterdir() if p.is_dir() and (p / "report.json").exists()]
-        runs.append({"run_id": entry.name, "device_count": len(device_dirs)})
+        manifest = run_manifest.load_or_legacy(entry, len(device_dirs))
+        runs.append({
+            "run_id": entry.name,
+            "device_count": len(device_dirs),
+            "created_at": manifest.get("created_at"),
+            "configuration_count": manifest.get("configuration_count"),
+            "selected_configuration_count": manifest.get("selected_configuration_count"),
+            "golden_config": manifest.get("golden_config"),
+            "analysis": manifest.get("analysis"),
+            "briefing": manifest.get("briefing"),
+            "dashboard": manifest.get("dashboard"),
+            "compliance_report": manifest.get("compliance_report"),
+            "is_legacy": manifest.get("is_legacy", False),
+        })
     return runs
 
 
@@ -143,3 +178,12 @@ def list_run_devices(run_id: str) -> list[str]:
     what Briefings/Compliance Report screens offer as pickable devices."""
     run_dir = run_dir_path(run_id)
     return sorted(p.name for p in run_dir.iterdir() if p.is_dir() and (p / "report.json").exists())
+
+
+def get_run_manifest(run_id: str) -> dict:
+    """Single-run detail view - the same manifest-or-legacy shape list_runs()
+    embeds per row, for screens (Briefings' Golden Config traceability) that
+    need one run's full metadata without re-listing every run."""
+    run_dir = run_dir_path(run_id)
+    device_dirs = [p for p in run_dir.iterdir() if p.is_dir() and (p / "report.json").exists()]
+    return run_manifest.load_or_legacy(run_dir, len(device_dirs))

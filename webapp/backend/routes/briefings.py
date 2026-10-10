@@ -14,14 +14,20 @@ class RunBriefingRequest(BaseModel):
     device_filenames: list[str] | None = None  # None = brief every device in the run
     severity_min: str | None = None
     backend: str = "auto"
+    golden_profile_id: str | None = None  # None = use the run's own Golden Config snapshot (safe default)
 
 
 @router.post("/run")
 def run_briefing(payload: RunBriefingRequest) -> dict:
     job_id = briefings_service.start_briefing(
-        payload.run_id, payload.device_filenames, payload.severity_min, payload.backend
+        payload.run_id, payload.device_filenames, payload.severity_min, payload.backend, payload.golden_profile_id
     )
     return {"job_id": job_id}
+
+
+@router.get("/{run_id}/golden-config-options")
+def golden_config_options(run_id: str) -> dict:
+    return briefings_service.get_golden_config_options(run_id)
 
 
 @router.get("/jobs/{job_id}")
