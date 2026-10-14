@@ -66,9 +66,11 @@ will work without it.
 ## 2. Clone the repo
 
 ```bash
-git clone <this repo's URL> ncm_copilot
+git clone https://github.com/rafa-acosta/ncm_copilot.git
 cd ncm_copilot/docker
 ```
+
+(Public repo - no credentials needed on the client server.)
 
 Everything from here on is run from inside `docker/`.
 
