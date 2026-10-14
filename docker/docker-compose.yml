@@ -1,0 +1,53 @@
+# NCM Copilot - portable Docker deployment. Run from this directory:
+#   cp .env.example .env   # then edit .env
+#   docker compose up --build -d
+# See documentation/DOCKER_DEPLOYMENT.md for the full walkthrough.
+
+services:
+  # Stock official image - no custom Dockerfile. Same llama-server binary
+  # and flags local-llm/_serve_common.sh uses on the bare-metal path
+  # (including the --cache-ram/--no-cache-idle-slots/--parallel 1 memory-leak
+  # fix - see local-llm/README.md's "Memory safety" section), just launched
+  # as its own container instead of a systemd-supervised subprocess.
+  llm-engine:
+    image: ghcr.io/ggml-org/llama.cpp:server-cuda
+    restart: unless-stopped
+    volumes:
+      - ./models:/models:ro
+    command: >
+      -m /models/${LLM_MODEL_FILE}
+      --port 8080
+      --host 0.0.0.0
+      -ngl ${LLM_NGL}
+      -c ${LLM_CTX_SIZE}
+      --parallel ${LLM_PARALLEL}
+      --cache-ram ${LLM_CACHE_RAM}
+      --no-cache-idle-slots
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  webapp:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.webapp
+    restart: unless-stopped
+    depends_on:
+      - llm-engine
+    ports:
+      - "${WEBAPP_PORT:-8000}:8000"
+    environment:
+      - LLM_MODEL_NAME=${LLM_MODEL_NAME}
+    volumes:
+      - ncm_data:/app/webapp/data
+
+volumes:
+  # webapp/data/ (uploaded configs, Golden Config profiles, analysis runs,
+  # compliance history) - the single runtime-writable directory, see
+  # webapp/README.md. Survives `docker compose down` / image rebuilds;
+  # only removed by an explicit `docker compose down -v`.
+  ncm_data:

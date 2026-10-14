@@ -1,0 +1,25 @@
+# Docker-mode backend registry, rendered to docker/config.docker.yaml by
+# docker/entrypoint.sh at container start (envsubst fills ${LLM_MODEL_NAME}
+# from docker/.env - see docker-compose.yml). Loaded via
+# AGENT_ASSISTED_CODING_LLM_CONFIG, the same override llm_client.py's own
+# _config_path() already supports - see llm_client.py.
+#
+# Only one entry: unlike the bare-metal local-llm/config.yaml (which can
+# register both qwen_coder and phi4_mini since you pick which one to start
+# in Settings), the Docker llm-engine service runs exactly one model at a
+# time on a fixed port (same "only one model fits in VRAM" constraint
+# documented in local-llm/config.yaml's own notes) - swapping LLM_MODEL in
+# docker/.env and recreating the llm-engine container is the Docker
+# equivalent of Settings' Start/Stop buttons.
+backends:
+  local_llm:
+    role: fast_default
+    base_url: http://llm-engine:8080/v1
+    model_name: ${LLM_MODEL_NAME}
+notes: >
+  Docker deployment - see documentation/DOCKER_DEPLOYMENT.md. The llm-engine
+  service (ghcr.io/ggml-org/llama.cpp:server-cuda) is a separate container,
+  not a process this webapp spawns - the Settings page's LLM engine
+  Start/Stop controls correctly show it as unmanageable ("started outside
+  this app") and reachability-only, by design (local-llm/*.sh is excluded
+  from this image - see .dockerignore).

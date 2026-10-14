@@ -30,6 +30,13 @@ briefing.json
 local-llm/bin/
 local-llm/models/
 
+# Docker deployment: GGUF models downloaded into here for the llm-engine
+# container's volume mount (see documentation/DOCKER_DEPLOYMENT.md), and the
+# real per-deployment .env (docker/.env.example is the tracked template).
+docker/models/*
+!docker/models/.gitkeep
+docker/.env
+
 # OS
 .DS_Store
 

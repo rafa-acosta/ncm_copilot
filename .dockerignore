@@ -1,0 +1,44 @@
+# Build context for docker/Dockerfile.webapp is the repo root (webapp/backend
+# needs sys.path access to top-level modules like compliance_engine.py,
+# controls.yaml, templates/ - see docker-compose.yml's build.context).
+# This keeps that context (and the resulting image) small and correct.
+
+.git/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Local LLM: entirely excluded from the webapp image on purpose. The LLM
+# engine runs as its own container (ghcr.io/ggml-org/llama.cpp:server-cuda),
+# not as a subprocess spawned by the webapp. Leaving local-llm/*.sh and the
+# multi-GB bin/model dirs out of this image is what makes
+# llm_engine_service.py's _resolve_script() correctly report "unmanageable"
+# and the Settings page show "started outside this app" instead of a broken
+# Start/Stop button that can't reach a sibling container.
+local-llm/
+
+# This project's own Docker artifacts/downloaded models - not needed inside
+# the image being built.
+docker/models/
+docker/.env
+
+# Runtime data - populated at container runtime via the ncm_data volume,
+# never baked into the image.
+webapp/data/
+
+# Not needed at runtime.
+tests/
+support_files/
+briefings/
+compliance_dashboards/
+compliance_reports/
+compliance_history/
+device_configs/
+reports/
+output/
+*.pdf
+documentation/
+.github/

@@ -1,0 +1,45 @@
+# NCM Copilot - web app image.
+#
+# Build context is the REPO ROOT, not docker/ - webapp/backend/services/*.py
+# all do `REPO_ROOT = Path(__file__).resolve().parents[3]` then
+# `sys.path.insert(0, str(REPO_ROOT))` to import top-level modules
+# (compliance_engine.py, main.py, llm_client.py, controls.yaml, templates/,
+# etc.), so the whole repo (minus .dockerignore's exclusions - notably
+# local-llm/, which is deliberately left out so the Settings page's LLM
+# engine Start/Stop controls degrade to "started outside this app" instead
+# of trying to spawn a process that can't reach the sibling llm-engine
+# container) needs to be present in the image.
+#
+# See docker-compose.yml: build.context: .. , build.dockerfile: docker/Dockerfile.webapp
+
+FROM python:3.12-slim
+
+# WeasyPrint's native libs (Pango/Cairo/GDK-Pixbuf) - see
+# documentation/DEPENDENCIES.md for the same list used for a bare-metal
+# install. Only PDF export needs these; HTML/JSON reports don't, but they're
+# cheap enough to always include rather than make PDF export a day-2 surprise.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpango-1.0-0 \
+    libpangocairo-1.0-0 \
+    libcairo2 \
+    libgdk-pixbuf-2.0-0 \
+    gettext-base \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+# docker/entrypoint.sh renders docker/config.docker.yaml.template (envsubst,
+# using gettext-base's envsubst installed above) into the path
+# AGENT_ASSISTED_CODING_LLM_CONFIG points llm_client.py at - see
+# llm_client.py:_config_path(). No Python code changes needed for this.
+RUN chmod +x docker/entrypoint.sh
+ENV AGENT_ASSISTED_CODING_LLM_CONFIG=/app/docker/config.docker.yaml
+
+EXPOSE 8000
+
+ENTRYPOINT ["docker/entrypoint.sh"]
